@@ -29,16 +29,17 @@ build plan.
 ## Status
 
 - [x] Day 1 — synthetic dataset generator + red-team anomaly injection + EDA
-- [ ] Day 2 — deeper EDA / dataset calibration
+- [x] Day 2 — deeper EDA / dataset calibration (heatmaps, correlations, CERT loader stub)
 - [ ] Day 3 — feature engineering
 - [ ] Day 4 — baseline unsupervised models (Isolation Forest, One-Class SVM)
 - [ ] Day 5 — Autoencoder + graph analysis
 - [ ] Day 6 — Explainable AI (SHAP, LIME)
 - [ ] Day 7 — Streamlit dashboard + final integration
 
-See [docs/day1_progress.md](docs/day1_progress.md) for Day 1 details and
-[docs/day1_eda_summary.md](docs/day1_eda_summary.md) for the generated
-dataset's summary statistics.
+See [docs/day1_progress.md](docs/day1_progress.md) / [docs/day2_progress.md](docs/day2_progress.md)
+for daily write-ups, and [docs/day1_eda_summary.md](docs/day1_eda_summary.md) /
+[docs/day2_eda_summary.md](docs/day2_eda_summary.md) for the EDA findings.
+Generated figures live under [docs/figures/](docs/figures/).
 
 ## Repository structure
 
@@ -47,6 +48,8 @@ src/
   generate_logs.py      # synthetic log generator (Day 1)
   inject_anomalies.py   # red-team scenario injection + ground truth labels
   eda_day1.py            # Day 1 sanity-check EDA
+  eda_day2.py            # Day 2 deeper EDA (heatmaps, correlations, comparisons)
+  load_cert.py            # optional CERT r4.2 loader (for later cross-validation)
 data/
   raw/                  # place manually-downloaded external datasets here (gitignored)
   processed/full/       # generated dataset (users, logon, device, http, email, file, labels)
