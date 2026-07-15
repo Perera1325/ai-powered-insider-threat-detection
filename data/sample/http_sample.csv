@@ -1,0 +1,15 @@
+user_id,pc,url,timestamp
+U0064,PC-IT-064,intranet.simcorp-internal.local,2026-06-01 07:03:49
+U0091,PC-SAL-091,news.example.com,2026-06-01 07:05:07
+U0073,PC-HR-073,news.example.com,2026-06-01 07:18:36
+U0046,PC-SAL-046,sharepoint.simcorp-internal.local,2026-06-01 07:22:57
+U0054,PC-HR-054,sharepoint.simcorp-internal.local,2026-06-01 07:29:03
+U0059,PC-MAR-059,sharepoint.simcorp-internal.local,2026-06-01 07:32:49
+U0099,PC-IT-099,sharepoint.simcorp-internal.local,2026-06-01 07:43:50
+U0023,PC-SAL-023,github.com,2026-06-01 07:47:04
+U0006,PC-SAL-006,github.com,2026-06-01 07:48:08
+U0048,PC-IT-048,github.com,2026-06-01 07:54:48
+U0091,PC-SAL-091,mail.google.com,2026-06-01 07:55:14
+U0040,PC-HR-040,linkedin.com,2026-06-01 07:56:45
+U0032,PC-SAL-032,docs.google.com,2026-06-01 08:11:15
+U0040,PC-HR-040,mail.google.com,2026-06-01 08:15:03

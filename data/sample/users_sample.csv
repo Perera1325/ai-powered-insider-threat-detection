@@ -1,0 +1,15 @@
+user_id,full_name,department,role,pc,email
+U0001,Allison Hill,Legal,Employee,PC-LEG-001,u0001@simcorp-internal.local
+U0002,Noah Rhodes,Legal,Employee,PC-LEG-002,u0002@simcorp-internal.local
+U0003,Angie Henderson,Engineering,Employee,PC-ENG-003,u0003@simcorp-internal.local
+U0004,Daniel Wagner,Finance,Employee,PC-FIN-004,u0004@simcorp-internal.local
+U0005,Cristian Santos,IT,Employee,PC-IT-005,u0005@simcorp-internal.local
+U0006,Connie Lawrence,Sales,Employee,PC-SAL-006,u0006@simcorp-internal.local
+U0007,Abigail Shaffer,Finance,Employee,PC-FIN-007,u0007@simcorp-internal.local
+U0008,Gina Moore,IT,Employee,PC-IT-008,u0008@simcorp-internal.local
+U0009,Gabrielle Davis,IT,Employee,PC-IT-009,u0009@simcorp-internal.local
+U0010,Ryan Munoz,Legal,Manager,PC-LEG-010,u0010@simcorp-internal.local
+U0011,Monica Herrera,Sales,Employee,PC-SAL-011,u0011@simcorp-internal.local
+U0012,Jamie Arnold,IT,Employee,PC-IT-012,u0012@simcorp-internal.local
+U0013,Lisa Hensley,Marketing,Employee,PC-MAR-013,u0013@simcorp-internal.local
+U0014,Michele Williams,Marketing,Employee,PC-MAR-014,u0014@simcorp-internal.local
