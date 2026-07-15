@@ -51,8 +51,12 @@ def load_data():
 
 def get_feature_matrix(features):
     feature_cols = [c for c in features.columns if c != "user_id"]
-    X = standardize(features[feature_cols].values)
-    return X, feature_cols
+    raw = features[feature_cols].values
+    mean = raw.mean(axis=0)
+    std = raw.std(axis=0)
+    std_safe = np.where(std == 0, 1, std)
+    X = (raw - mean) / std_safe
+    return X, feature_cols, mean, std
 
 
 def train_models(X):

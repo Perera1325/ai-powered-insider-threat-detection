@@ -72,10 +72,11 @@ src/
     kernel_shap.py            # Day 6: from-scratch Kernel SHAP (see note in docs/day6_progress.md)
     lime_explainer.py          # Day 6: from-scratch LIME (see same note)
   dashboard_utils.py           # Day 7: testable core logic behind the dashboard
+  live_demo.py                  # Live-demo mode: real-time simulated feed + injection
 app.py                         # Day 7: Streamlit SOC dashboard (streamlit run app.py)
 tests/
   _streamlit_stub.py           # Day 7: minimal streamlit stand-in (see docs/day7_progress.md)
-  smoke_test_dashboard.py      # Day 7: runs app.py end-to-end against the stub
+  smoke_test_dashboard.py      # Day 7: runs app.py end-to-end against the stub (incl. Live Demo tab)
 data/
   raw/                  # place manually-downloaded external datasets here (gitignored)
   processed/full/       # generated dataset (users, logon, device, http, email, file, labels)
@@ -88,6 +89,16 @@ docs/
   figures/                 # all generated plots
 requirements.txt
 ```
+
+## Live demo mode
+
+The dashboard has a **🔴 Live Demo** tab that simulates a small company
+generating fresh activity day by day in real time, then injects an
+insider attack mid-stream so you can watch the risk score spike as it
+happens - built for presenting to a lecturer/audience rather than only
+showing a static result. See
+[docs/live_demo_guide.md](docs/live_demo_guide.md) for how to run and
+narrate it.
 
 ## Setup
 

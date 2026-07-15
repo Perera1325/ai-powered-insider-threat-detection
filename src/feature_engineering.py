@@ -104,8 +104,8 @@ def build_email_features(email):
     )
     feats = feats.join(ext_g.size().rename("external_email_count"))
     feats = feats.join(ext_g["size_kb"].max().rename("max_external_size_kb"))
-    feats["external_email_count"] = feats["external_email_count"].fillna(0)
-    feats["max_external_size_kb"] = feats["max_external_size_kb"].fillna(0)
+    feats["external_email_count"] = feats["external_email_count"].fillna(0).infer_objects(copy=False)
+    feats["max_external_size_kb"] = feats["max_external_size_kb"].fillna(0).infer_objects(copy=False)
     feats["external_email_ratio"] = feats.external_email_count / feats.email_count
     return feats.fillna(0)
 
@@ -145,7 +145,7 @@ def build_file_features(file_df):
     else:
         feats["max_daily_shared_folder_events"] = 0
 
-    return feats.fillna(0)
+    return feats.fillna(0).infer_objects(copy=False)
 
 
 def main():

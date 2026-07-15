@@ -55,6 +55,20 @@ def generate_users(num_users=NUM_USERS):
     return pd.DataFrame(users)
 
 
+def _safe_df(rows, columns):
+    """Returns a properly-columned (possibly empty) DataFrame, sorted by
+    timestamp. Guards against the case where `rows` is empty - a plain
+    `pd.DataFrame([])` has NO columns at all, which breaks
+    `.sort_values("timestamp")`. This matters for small user cohorts /
+    single-day windows (e.g. the live demo module) where it's entirely
+    possible a given day produces zero events of some type - with the
+    full 100-user/30-day baseline dataset this edge case never came up.
+    """
+    if not rows:
+        return pd.DataFrame(columns=columns)
+    return pd.DataFrame(rows).sort_values("timestamp").reset_index(drop=True)
+
+
 def _business_hour_ts(day):
     """Random timestamp within typical 08:00-18:00 business hours."""
     hour = np.random.normal(loc=13, scale=2.5)
@@ -92,7 +106,7 @@ def generate_logon(users_df, num_days=NUM_DAYS, start_date=START_DATE):
                     "timestamp": logoff_time,
                 }
             )
-    return pd.DataFrame(rows).sort_values("timestamp").reset_index(drop=True)
+    return _safe_df(rows, ["user_id", "pc", "activity", "timestamp"])
 
 
 def generate_device(users_df, num_days=NUM_DAYS, start_date=START_DATE):
@@ -112,7 +126,7 @@ def generate_device(users_df, num_days=NUM_DAYS, start_date=START_DATE):
                 rows.append(
                     {"user_id": u.user_id, "pc": u.pc, "activity": "Disconnect", "timestamp": disconnect_time}
                 )
-    return pd.DataFrame(rows).sort_values("timestamp").reset_index(drop=True)
+    return _safe_df(rows, ["user_id", "pc", "activity", "timestamp"])
 
 
 def generate_http(users_df, num_days=NUM_DAYS, start_date=START_DATE):
@@ -136,7 +150,7 @@ def generate_http(users_df, num_days=NUM_DAYS, start_date=START_DATE):
                         "timestamp": _business_hour_ts(day),
                     }
                 )
-    return pd.DataFrame(rows).sort_values("timestamp").reset_index(drop=True)
+    return _safe_df(rows, ["user_id", "pc", "url", "timestamp"])
 
 
 def generate_email(users_df, num_days=NUM_DAYS, start_date=START_DATE):
@@ -166,7 +180,7 @@ def generate_email(users_df, num_days=NUM_DAYS, start_date=START_DATE):
                         "timestamp": _business_hour_ts(day),
                     }
                 )
-    return pd.DataFrame(rows).sort_values("timestamp").reset_index(drop=True)
+    return _safe_df(rows, ["user_id", "to", "external", "size_kb", "attachments", "timestamp"])
 
 
 def generate_file(users_df, num_days=NUM_DAYS, start_date=START_DATE):
@@ -195,7 +209,7 @@ def generate_file(users_df, num_days=NUM_DAYS, start_date=START_DATE):
                         "timestamp": _business_hour_ts(day),
                     }
                 )
-    return pd.DataFrame(rows).sort_values("timestamp").reset_index(drop=True)
+    return _safe_df(rows, ["user_id", "pc", "filename", "action", "timestamp"])
 
 
 def main():

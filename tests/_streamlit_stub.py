@@ -28,7 +28,31 @@ class _DummyContainer:
     def __exit__(self, *exc):
         return False
 
+    def container(self):
+        return _DummyContainer()
+
+    def empty(self):
+        return _DummyContainer()
+
+    def pyplot(self, fig=None, **kwargs):
+        assert fig is not None
+        return None
+
+    def dataframe(self, df=None, **kwargs):
+        assert df is not None
+        return None
+
+    def error(self, *args, **kwargs):
+        return None
+
     def __getattr__(self, name):
+        # delegate widget calls (slider, selectbox, button, metric, ...) to
+        # the module-level stub of the same name, so `col.slider(...)`
+        # behaves the same as `st.slider(...)` rather than silently
+        # returning None regardless of arguments.
+        global_fn = globals().get(name)
+        if callable(global_fn):
+            return global_fn
         return _noop
 
 
@@ -76,6 +100,17 @@ sidebar = _DummyContainer()
 def dataframe(df, **kwargs):
     assert df is not None
     return None
+
+
+def empty(**kwargs):
+    return _DummyContainer()
+
+
+def button(label, **kwargs):
+    return True  # always "clicked" so the smoke test exercises the live-feed loop
+
+
+success = error = _noop
 
 
 def image(path, **kwargs):
