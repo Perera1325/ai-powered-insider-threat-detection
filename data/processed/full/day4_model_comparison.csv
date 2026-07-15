@@ -1,0 +1,4 @@
+model,precision@k,recall@k,f1@k,roc_auc
+Day3_zscore_baseline,1.0,1.0,1.0,1.0
+IsolationForest_scratch,1.0,1.0,1.0,1.0
+Mahalanobis_detector,1.0,1.0,1.0,1.0

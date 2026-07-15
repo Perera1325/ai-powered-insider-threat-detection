@@ -31,7 +31,7 @@ build plan.
 - [x] Day 1 — synthetic dataset generator + red-team anomaly injection + EDA
 - [x] Day 2 — deeper EDA / dataset calibration (heatmaps, correlations, CERT loader stub)
 - [x] Day 3 — feature engineering (25 behavioral/statistical features per user)
-- [ ] Day 4 — baseline unsupervised models (Isolation Forest, One-Class SVM)
+- [x] Day 4 — baseline unsupervised models (Isolation Forest + Mahalanobis detector; see note below on One-Class SVM)
 - [ ] Day 5 — Autoencoder + graph analysis
 - [ ] Day 6 — Explainable AI (SHAP, LIME)
 - [ ] Day 7 — Streamlit dashboard + final integration
@@ -52,6 +52,10 @@ src/
   load_cert.py             # optional CERT r4.2 loader (for later cross-validation)
   feature_engineering.py   # Day 3: builds per-user behavioral feature table
   day3_ranking_check.py    # Day 3: naive z-score ranking sanity check
+  train_baseline_models.py # Day 4: trains + evaluates unsupervised models
+  models/
+    isolation_forest.py    # Day 4: from-scratch Isolation Forest (see note in docs/day4_progress.md)
+    mahalanobis.py          # Day 4: Mahalanobis detector (One-Class SVM stand-in, see same note)
 data/
   raw/                  # place manually-downloaded external datasets here (gitignored)
   processed/full/       # generated dataset (users, logon, device, http, email, file, labels)
@@ -73,6 +77,20 @@ python3 src/generate_logs.py
 python3 src/inject_anomalies.py
 python3 src/eda_day1.py
 ```
+
+## Note on Day 4 models (Isolation Forest / One-Class SVM)
+
+Day 4 was built and evaluated in a sandbox whose network proxy could
+not download scikit-learn's scipy dependency in reasonable time
+(verified ~40-50 KB/s on the wheel). Isolation Forest was implemented
+from scratch (pure NumPy, see `src/models/isolation_forest.py`); a
+Mahalanobis-distance detector stands in for One-Class SVM (see
+`src/models/mahalanobis.py`). On a normal connection,
+`pip install scikit-learn` is instant - swap in
+`sklearn.ensemble.IsolationForest` / `sklearn.svm.OneClassSVM` there if
+you want the exact algorithms named in the proposal (same `.fit()` /
+`.decision_function()` interface, drop-in replacement). Full reasoning
+and results are in [docs/day4_progress.md](docs/day4_progress.md).
 
 ## Note on the CERT Insider Threat Dataset
 
