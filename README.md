@@ -33,7 +33,7 @@ build plan.
 - [x] Day 3 — feature engineering (25 behavioral/statistical features per user)
 - [x] Day 4 — baseline unsupervised models (Isolation Forest + Mahalanobis detector; see note below on One-Class SVM)
 - [x] Day 5 — Autoencoder (from scratch) + graph analysis (NetworkX)
-- [ ] Day 6 — Explainable AI (SHAP, LIME)
+- [x] Day 6 — Explainable AI (from-scratch SHAP + LIME)
 - [ ] Day 7 — Streamlit dashboard + final integration
 
 See [docs/day1_progress.md](docs/day1_progress.md) / [docs/day2_progress.md](docs/day2_progress.md)
@@ -59,6 +59,10 @@ src/
     isolation_forest.py    # Day 4: from-scratch Isolation Forest (see note in docs/day4_progress.md)
     mahalanobis.py          # Day 4: Mahalanobis detector (One-Class SVM stand-in, see same note)
     autoencoder.py           # Day 5: from-scratch Autoencoder (see note in docs/day5_progress.md)
+  explain_day6.py            # Day 6: explains flagged users with SHAP + LIME
+  explain/
+    kernel_shap.py            # Day 6: from-scratch Kernel SHAP (see note in docs/day6_progress.md)
+    lime_explainer.py          # Day 6: from-scratch LIME (see same note)
 data/
   raw/                  # place manually-downloaded external datasets here (gitignored)
   processed/full/       # generated dataset (users, logon, device, http, email, file, labels)
