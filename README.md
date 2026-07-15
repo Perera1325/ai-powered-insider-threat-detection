@@ -30,7 +30,7 @@ build plan.
 
 - [x] Day 1 — synthetic dataset generator + red-team anomaly injection + EDA
 - [x] Day 2 — deeper EDA / dataset calibration (heatmaps, correlations, CERT loader stub)
-- [ ] Day 3 — feature engineering
+- [x] Day 3 — feature engineering (25 behavioral/statistical features per user)
 - [ ] Day 4 — baseline unsupervised models (Isolation Forest, One-Class SVM)
 - [ ] Day 5 — Autoencoder + graph analysis
 - [ ] Day 6 — Explainable AI (SHAP, LIME)
@@ -45,11 +45,13 @@ Generated figures live under [docs/figures/](docs/figures/).
 
 ```
 src/
-  generate_logs.py      # synthetic log generator (Day 1)
-  inject_anomalies.py   # red-team scenario injection + ground truth labels
-  eda_day1.py            # Day 1 sanity-check EDA
-  eda_day2.py            # Day 2 deeper EDA (heatmaps, correlations, comparisons)
-  load_cert.py            # optional CERT r4.2 loader (for later cross-validation)
+  generate_logs.py         # synthetic log generator (Day 1)
+  inject_anomalies.py      # red-team scenario injection + ground truth labels
+  eda_day1.py              # Day 1 sanity-check EDA
+  eda_day2.py              # Day 2 deeper EDA (heatmaps, correlations, comparisons)
+  load_cert.py             # optional CERT r4.2 loader (for later cross-validation)
+  feature_engineering.py   # Day 3: builds per-user behavioral feature table
+  day3_ranking_check.py    # Day 3: naive z-score ranking sanity check
 data/
   raw/                  # place manually-downloaded external datasets here (gitignored)
   processed/full/       # generated dataset (users, logon, device, http, email, file, labels)
