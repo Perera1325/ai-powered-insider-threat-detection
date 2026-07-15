@@ -34,12 +34,20 @@ build plan.
 - [x] Day 4 — baseline unsupervised models (Isolation Forest + Mahalanobis detector; see note below on One-Class SVM)
 - [x] Day 5 — Autoencoder (from scratch) + graph analysis (NetworkX)
 - [x] Day 6 — Explainable AI (from-scratch SHAP + LIME)
-- [ ] Day 7 — Streamlit dashboard + final integration
+- [x] Day 7 — Streamlit dashboard + final integration
 
-See [docs/day1_progress.md](docs/day1_progress.md) / [docs/day2_progress.md](docs/day2_progress.md)
-for daily write-ups, and [docs/day1_eda_summary.md](docs/day1_eda_summary.md) /
-[docs/day2_eda_summary.md](docs/day2_eda_summary.md) for the EDA findings.
+Daily write-ups: [Day 1](docs/day1_progress.md) · [Day 2](docs/day2_progress.md) ·
+[Day 3](docs/day3_progress.md) · [Day 4](docs/day4_progress.md) · [Day 5](docs/day5_progress.md) ·
+[Day 6](docs/day6_progress.md) · [Day 7](docs/day7_progress.md).
 Generated figures live under [docs/figures/](docs/figures/).
+
+**Read the Day 4-7 write-ups even if you only skim this repo** - each
+documents an honest limitation or a real debugging finding (why the
+"perfect" model scores aren't a real-world accuracy claim, why graph
+analysis came up empty, why LIME was noisier than SHAP, why the
+dashboard is verified via a stub rather than a live run) rather than
+just reporting clean success. That's deliberate and worth carrying into
+the final report.
 
 ## Repository structure
 
@@ -63,14 +71,21 @@ src/
   explain/
     kernel_shap.py            # Day 6: from-scratch Kernel SHAP (see note in docs/day6_progress.md)
     lime_explainer.py          # Day 6: from-scratch LIME (see same note)
+  dashboard_utils.py           # Day 7: testable core logic behind the dashboard
+app.py                         # Day 7: Streamlit SOC dashboard (streamlit run app.py)
+tests/
+  _streamlit_stub.py           # Day 7: minimal streamlit stand-in (see docs/day7_progress.md)
+  smoke_test_dashboard.py      # Day 7: runs app.py end-to-end against the stub
 data/
   raw/                  # place manually-downloaded external datasets here (gitignored)
   processed/full/       # generated dataset (users, logon, device, http, email, file, labels)
   sample/               # small committed samples for quick inspection
 docs/
-  project_plan.md       # full 7-day build plan
-  day1_progress.md      # Day 1 write-up
-  day1_eda_summary.md    # auto-generated EDA output
+  project_plan.md         # full 7-day build plan
+  day1_progress.md ... day7_progress.md   # daily write-ups
+  day1_eda_summary.md, day2_eda_summary.md, day3_ranking_check.md,
+  day5_graph_summary.md, day6_explainability_report.md              # generated findings
+  figures/                 # all generated plots
 requirements.txt
 ```
 
@@ -80,9 +95,23 @@ requirements.txt
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
+# rebuild the full pipeline, in order:
 python3 src/generate_logs.py
 python3 src/inject_anomalies.py
 python3 src/eda_day1.py
+python3 src/eda_day2.py
+python3 src/feature_engineering.py
+python3 src/day3_ranking_check.py
+python3 src/train_baseline_models.py
+python3 src/train_autoencoder.py
+python3 src/graph_analysis.py
+python3 src/explain_day6.py
+
+# smoke-test the dashboard logic without needing streamlit installed:
+python3 tests/smoke_test_dashboard.py
+
+# run the actual dashboard (needs `streamlit` + `pyarrow`, see note below):
+streamlit run app.py
 ```
 
 ## Note on Day 4 models (Isolation Forest / One-Class SVM)
@@ -98,6 +127,19 @@ Mahalanobis-distance detector stands in for One-Class SVM (see
 you want the exact algorithms named in the proposal (same `.fit()` /
 `.decision_function()` interface, drop-in replacement). Full reasoning
 and results are in [docs/day4_progress.md](docs/day4_progress.md).
+
+## Note on the dashboard (Day 7)
+
+`app.py` is a full Streamlit dashboard, but this project's dev sandbox
+could not install Streamlit's `pyarrow` dependency (same bandwidth
+issue as scipy/TensorFlow in Day 4/5). The dashboard's actual logic
+(`src/dashboard_utils.py`) was tested directly and via a stub-based
+smoke test (`tests/smoke_test_dashboard.py`) that runs `app.py`
+end-to-end without needing Streamlit installed - but nobody has seen
+it actually render yet. On a normal connection, `pip install streamlit`
+takes seconds; run `streamlit run app.py` and it should just work.
+Please try it and let me know if anything looks off - see
+[docs/day7_progress.md](docs/day7_progress.md) for full details.
 
 ## Note on the CERT Insider Threat Dataset
 
