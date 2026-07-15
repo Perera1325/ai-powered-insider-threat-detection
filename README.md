@@ -32,7 +32,7 @@ build plan.
 - [x] Day 2 — deeper EDA / dataset calibration (heatmaps, correlations, CERT loader stub)
 - [x] Day 3 — feature engineering (25 behavioral/statistical features per user)
 - [x] Day 4 — baseline unsupervised models (Isolation Forest + Mahalanobis detector; see note below on One-Class SVM)
-- [ ] Day 5 — Autoencoder + graph analysis
+- [x] Day 5 — Autoencoder (from scratch) + graph analysis (NetworkX)
 - [ ] Day 6 — Explainable AI (SHAP, LIME)
 - [ ] Day 7 — Streamlit dashboard + final integration
 
@@ -53,9 +53,12 @@ src/
   feature_engineering.py   # Day 3: builds per-user behavioral feature table
   day3_ranking_check.py    # Day 3: naive z-score ranking sanity check
   train_baseline_models.py # Day 4: trains + evaluates unsupervised models
+  train_autoencoder.py     # Day 5: trains + evaluates the autoencoder
+  graph_analysis.py        # Day 5: NetworkX user-resource graph + centrality
   models/
     isolation_forest.py    # Day 4: from-scratch Isolation Forest (see note in docs/day4_progress.md)
     mahalanobis.py          # Day 4: Mahalanobis detector (One-Class SVM stand-in, see same note)
+    autoencoder.py           # Day 5: from-scratch Autoencoder (see note in docs/day5_progress.md)
 data/
   raw/                  # place manually-downloaded external datasets here (gitignored)
   processed/full/       # generated dataset (users, logon, device, http, email, file, labels)
