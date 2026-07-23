@@ -90,6 +90,23 @@ docs/
 requirements.txt
 ```
 
+## Training with the real libraries (Google Colab)
+
+Everything in this repo's Day 4-6 work was implemented from scratch in
+NumPy because the original dev sandbox could not install scikit-learn/
+TensorFlow/shap/lime (documented in `docs/day4_progress.md` onward). If
+you have access to Google Colab (or any machine with normal internet),
+`notebooks/real_library_training.ipynb` re-runs the same evaluation
+using the actual named libraries - scikit-learn's `IsolationForest` and
+`OneClassSVM`, a TensorFlow/Keras Autoencoder, and real `shap`/`lime` -
+against the exact same dataset already committed here, and compares the
+results to the from-scratch versions.
+
+**To run it:** open
+`https://colab.research.google.com/github/Perera1325/ai-powered-insider-threat-detection/blob/main/notebooks/real_library_training.ipynb`
+directly in your browser (no download/upload needed - Colab pulls it
+straight from GitHub), then `Runtime > Run all`.
+
 ## Live demo mode
 
 The dashboard has a **🔴 Live Demo** tab that simulates a small company
