@@ -29,8 +29,8 @@ def test_alert_metrics_present(app):
     assert app.metric[0].value == "100"
 
 
-def test_four_tabs(app):
-    assert len(app.tabs) == 4
+def test_five_tabs(app):
+    assert len(app.tabs) == 5
 
 
 def test_explanation_figure_rendered_for_selected_alert(app):
@@ -57,3 +57,30 @@ def test_live_demo_button_runs_and_raises_alert():
     assert not at.exception, [e.value for e in at.exception]
     assert any("ALERT" in e.value for e in at.error)
     assert any("Live feed complete" in e.value for e in at.success)
+
+
+def test_realtime_tab_streams_scores_and_alerts_on_injected_attack():
+    at = AppTest.from_file(APP, default_timeout=T)
+    at.run()
+    [b for b in at.button if "Start stream" in b.label][0].click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    try:
+        # let a few ticks flow; each .run() polls the scorer once (fragment auto-refresh is browser-side)
+        import time
+        deadline = time.time() + 120
+        injected = False
+        while time.time() < deadline:
+            time.sleep(1.5)
+            at.run()
+            assert not at.exception, [e.value for e in at.exception]
+            ticks = [m for m in at.metric if m.label == "Tick"]
+            if ticks and int(ticks[0].value) >= 3 and not injected:
+                [b for b in at.button if "Inject attack now" in b.label][0].click().run()
+                injected = True
+            if any("ALERT" in e.value for e in at.error):
+                break
+        alerts = [e.value for e in at.error if "ALERT" in e.value]
+        assert alerts, "no alert raised after injecting an attack"
+        assert any("matches the injected attack" in a for a in alerts)
+    finally:
+        [b for b in at.button if "Stop" in b.label][0].click().run()

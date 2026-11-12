@@ -33,3 +33,15 @@ def models(matrix):
 def y_true(data):
     m = data["features"][["user_id"]].merge(data["labels"][["user_id", "is_malicious"]], on="user_id", how="left")
     return m["is_malicious"].fillna(False).astype(int).values
+
+
+def pyvis_data(html):
+    """Parse the nodes/edges lists embedded in a PyVis page -> (nodes, edges)."""
+    import json
+    import re
+
+    def grab(name):
+        m = re.search(name + r" = new vis\.DataSet\((\[.*?\])\);", html, re.S)
+        return json.loads(m.group(1))
+
+    return grab("nodes"), grab("edges")

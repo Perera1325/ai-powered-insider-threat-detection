@@ -28,9 +28,10 @@ def test_explanation_is_interactive_speed(data, models, matrix, name):
 def test_whole_org_graph_is_sparse_enough_to_read(data):
     G = du.build_full_graph(data)
     html = build_pyvis_html(G, {}, data["labels"])
-    n_edges = html.count('"from"')
-    assert n_edges < 900, n_edges  # 5,000+ edges was an unreadable hairball
-    denser = build_pyvis_html(G, {}, data["labels"], min_edge_weight=2).count('"from"')
+    from conftest import pyvis_data
+    n_edges = len(pyvis_data(html)[1])
+    assert n_edges < 700, n_edges  # 4,000+ edges was an unreadable hairball (default = ~590, ~400 are thin folder lines)
+    denser = len(pyvis_data(build_pyvis_html(G, {}, data["labels"], min_edge_weight=2))[1])
     assert denser > n_edges
 
 

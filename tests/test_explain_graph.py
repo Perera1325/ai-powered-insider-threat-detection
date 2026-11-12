@@ -66,4 +66,8 @@ def test_pyvis_html_is_self_contained_and_marks_insiders(data, matrix):
     assert "vis-network" in html or "vis.Network" in html
     assert "GROUND TRUTH" in html
     focused = build_pyvis_html(G, {}, data["labels"], focus_user="U0027")
-    assert len(focused) < len(html)
+    from conftest import pyvis_data
+    nodes, edges = pyvis_data(focused)
+    assert len(nodes) == 1 + 4 + 12                         # the user + 4 shared folders + 12 strongest contacts
+    assert len(edges) == 16 and all("U0027" in (e["from"], e["to"]) for e in edges)  # a star
+    assert '"label": "U0027"' in focused

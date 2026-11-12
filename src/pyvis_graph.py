@@ -28,12 +28,12 @@ def _risk_colour(risk):
     return f"#{r:02x}{g:02x}50"
 
 
-def build_pyvis_html(G, risk_by_user=None, labels=None, focus_user=None, height="650px", min_edge_weight=7, label_risk=50):
+def build_pyvis_html(G, risk_by_user=None, labels=None, focus_user=None, height="650px", min_edge_weight=7, label_risk=50, top_contacts=12):
     """Returns the HTML string of an interactive PyVis network.
 
     risk_by_user : dict user_id -> 0..100 risk score (optional)
     labels       : DataFrame with user_id,is_malicious,scenario (optional)
-    focus_user   : if given, only the 2-hop neighbourhood of this user is drawn
+    focus_user   : if given, draws a star: this user, their shared folders and their top_contacts strongest e-mail contacts
     min_edge_weight : hide user-user email links with fewer interactions than this
                       (default 7 keeps ~5% of links - the whole-org graph has ~4,700)
     label_risk   : in the whole-organisation view only users at/above this risk (and
@@ -46,13 +46,24 @@ def build_pyvis_html(G, risk_by_user=None, labels=None, focus_user=None, height=
     if labels is not None:
         label_map = labels.set_index("user_id")[["is_malicious", "scenario"]].to_dict("index")
 
+    # Focus view = a STAR: the user in the centre, their shared folders and their strongest
+    # `top_contacts` e-mail contacts, with only the edges that touch the user. (2 hops is useless -
+    # every user touches the same 4 folders so it reaches everyone - and drawing the links
+    # between the contacts too gives ~1,000 edges.)
     if focus_user and focus_user in G:
-        nodes = nx.ego_graph(G, focus_user, radius=2).nodes
-        H = G.subgraph(nodes).copy()
+        nbrs = sorted(G[focus_user].items(), key=lambda kv: kv[1].get("weight", 1), reverse=True)
+        resources = [n for n, _ in nbrs if G.nodes[n].get("node_type") == "resource"]
+        people = [n for n, _ in nbrs if G.nodes[n].get("node_type") != "resource"][:top_contacts]
+        H = nx.Graph()
+        for n in [focus_user, *resources, *people]:
+            H.add_node(n, **G.nodes[n])
+        for n in [*resources, *people]:
+            H.add_edge(focus_user, n, **G[focus_user][n])
     else:
         H = G.copy()
-    weak = [(u, v) for u, v, d in H.edges(data=True) if d.get("edge_type") == "email" and d.get("weight", 1) < min_edge_weight]
-    H.remove_edges_from(weak)
+        weak = [(u, v) for u, v, d in H.edges(data=True)
+                if d.get("edge_type") == "email" and d.get("weight", 1) < min_edge_weight]
+        H.remove_edges_from(weak)
 
     net = Network(height=height, width="100%", bgcolor="#ffffff", font_color="#222222", cdn_resources="in_line")
     for n, d in H.nodes(data=True):

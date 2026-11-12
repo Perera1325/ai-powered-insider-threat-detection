@@ -2,7 +2,7 @@
 
 Environment: 3.13.18 sklearn 1.9.1 tf 2.21.0 shap 0.54.1 streamlit 1.67.0 pandas 3.1.1 numpy 2.5.4
 
-**Result: 48 / 48 tests passed** (`python -m pytest -q tests`, ~1 min).
+**Result: 59 / 59 tests passed** (`python -m pytest -q tests`, ~2 min).
 
 ## What was tested
 
@@ -15,6 +15,7 @@ Environment: 3.13.18 sklearn 1.9.1 tf 2.21.0 shap 0.54.1 streamlit 1.67.0 pandas
 | Graph | `test_explain_graph.py` | all users + shared resources present; PyVis HTML is self-contained and marks insiders |
 | Live demo | `test_live_demo.py` | injecting an attack makes the insider's risk jump above every pre-attack value and reach HIGH (>= 70) |
 | Dashboard | `test_dashboard_app.py` | the **real** Streamlit app (Streamlit `AppTest`) renders with no exception; metrics, 4 tabs, figures; every model choice renders; clicking "Start Live Feed" runs the simulation and raises an ALERT |
+| Real-time | `test_realtime.py` + `test_dashboard_app.py` | producer log format; scorer reads incrementally and ignores a half-written line; each of 4 attack scenarios is alerted within 2 ticks with no false alarm before the attack; a quiet stream raises no alert; on-demand injection via control file; a **separate producer process** with wall-clock pacing produces an alert < 5 s after the logs were written; the Real-Time tab in the real app starts a stream, takes an injected attack and shows a matching ALERT |
 | Responsiveness | `test_performance.py` | models train lazily (first render ~6 s instead of ~30 s); every model's SHAP/LIME explanation < 15 s; the whole-organisation PyVis graph stays under 900 edges (was 5,000+) and labels only risky users |
 
 A real `streamlit run app.py --server.headless true` server was also started and
@@ -26,7 +27,7 @@ answered `/_stcore/health` = `ok` and `/` = HTTP 200.
 |---|---|
 | `test_app_renders_without_exception PASSED ` | PASS |
 | `test_alert_metrics_present PASSED         ` | PASS |
-| `test_four_tabs PASSED                     ` | PASS |
+| `test_five_tabs PASSED                     ` | PASS |
 | `test_explanation_figure_rendered_for_selected_alert` | PASS |
 | `test_every_model_choice_renders[Isolation Forest (sklearn)]` | PASS |
 | `test_every_model_choice_renders[One-Class SVM (sklearn)]` | PASS |
@@ -35,6 +36,7 @@ answered `/_stcore/health` = `ok` and `/` = HTTP 200.
 | `test_every_model_choice_renders[Autoencoder]` | PASS |
 | `test_every_model_choice_renders[Mahalanobis detector]` | PASS |
 | `test_live_demo_button_runs_and_raises_alert` | PASS |
+| `test_realtime_tab_streams_scores_and_alerts_on_injected_attack` | PASS |
 | `test_all_dataset_files_exist_and_nonempty PASSED   ` | PASS |
 | `test_users_and_labels_cover_same_users PASSED      ` | PASS |
 | `test_exactly_the_injected_insiders_are_labelled` | PASS |
@@ -72,6 +74,16 @@ answered `/_stcore/health` = `ok` and `/` = HTTP 200.
 | `test_different_seeds_give_different_data PASSED` | PASS |
 | `test_injection_creates_expected_number_of_insiders` | PASS |
 | `test_after_hours_injection_changes_after_hours_feature` | PASS |
+| `test_risk_scale_is_absolute_and_clipped PASSED ` | PASS |
+| `test_producer_log_format PASSED                ` | PASS |
+| `test_scorer_reads_incrementally_and_ignores_half_written_line` | PASS |
+| `test_attack_detected_within_two_ticks_with_no_false_alarms_before[after_hours_login]` | PASS |
+| `test_attack_detected_within_two_ticks_with_no_false_alarms_before[mass_file_access]` | PASS |
+| `test_attack_detected_within_two_ticks_with_no_false_alarms_before[usb_exfiltration]` | PASS |
+| `test_attack_detected_within_two_ticks_with_no_false_alarms_before[data_exfil_email]` | PASS |
+| `test_quiet_stream_raises_no_alert PASSED       ` | PASS |
+| `test_control_file_injects_on_demand PASSED     ` | PASS |
+| `test_end_to_end_subprocess_stream_alert_latency` | PASS |
 
 ## Known limitations (be upfront about these in the viva / report)
 
@@ -86,6 +98,7 @@ answered `/_stcore/health` = `ok` and `/` = HTTP 200.
    shrinking feature vectors toward the mean, not by re-simulating logs.
 4. **E-mail "NLP" features are recipient metadata only** (count, max, distinct recipients) -
    the simulated e-mail log has no subject/body text.
-5. **Per-user, whole-period features.** The risk score is per user over the whole window, not a
-   streaming per-event detector (the Live Demo recomputes features day by day to approximate this).
+5. **Micro-batch, not per-event streaming.** Features are per user over a 30-day sliding window, rebuilt once per
+   simulated day; the Real-Time tab therefore has seconds of delay and `privilege_probe` is detected in only some runs
+   (see `docs/realtime.md`).
 6. **The scratch autoencoder is the weakest model** (AUC 0.805); the Keras one is the default.

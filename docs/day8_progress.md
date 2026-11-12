@@ -34,3 +34,8 @@
   (3) alert table, explanations, graph and neighbourhood plot were recomputed on every widget change -> cached.
 - Measured (AppTest): first render 6.3 s, slider/model change ~1.3 s, first switch to the Keras autoencoder 3.5 s.
 - The `ConnectionResetError [WinError 10054]` in the Git Bash console is a harmless Windows asyncio message printed when the browser tab reloads/closes.
+
+## Real-time pipeline (added after the first manual test)
+Separate producer process -> JSONL log -> incremental sliding-window scorer -> dashboard "Real-Time" tab with Start / Inject attack now / Stop.
+13/15 injected attacks detected within 0-1 ticks (privilege_probe is the weak one), 1 false alert in 15 runs, alert < 5 s after the logs are written.
+Details and limits: `docs/realtime.md`. The focus view of the graph is now a star (user + 4 folders + 12 strongest contacts).

@@ -16,8 +16,13 @@ src/dashboard_utils.py so it can be tested independently of Streamlit
 that separation mattered in this project's dev environment).
 """
 
+import json
+import os
+import subprocess
 import sys
+import tempfile
 import time
+import uuid
 
 import pandas as pd
 import streamlit as st
@@ -26,7 +31,10 @@ sys.path.insert(0, "src")
 import dashboard_utils as du
 import live_demo as ld
 from pyvis_graph import build_pyvis_html
+from realtime.scorer import RealTimeScorer, risk_from_scores
 from inject_anomalies import SCENARIOS
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
 
 st.set_page_config(page_title="Insider Threat Detection - SOC Dashboard", layout="wide")
 
@@ -98,8 +106,8 @@ with st.sidebar:
         "you validate the model against a known answer key."
     )
 
-tab_alerts, tab_live, tab_graph, tab_models = st.tabs(
-    ["🚨 Alerts", "🔴 Live Demo", "🕸️ Interaction Graph", "📊 Model Comparison"]
+tab_alerts, tab_rt, tab_live, tab_graph, tab_models = st.tabs(
+    ["🚨 Alerts", "⚡ Real-Time", "🔴 Live Demo", "🕸️ Interaction Graph", "📊 Model Comparison"]
 )
 
 with tab_alerts:
@@ -143,6 +151,104 @@ with tab_alerts:
         subfig = _neighbourhood_fig(selected_uid, data)
         if subfig:
             st.pyplot(subfig)
+
+
+def _stop_stream():
+    rt = st.session_state.get("rt")
+    if rt:
+        try:
+            open(os.path.join(rt["dir"], "stop"), "w").close()
+            if rt["proc"].poll() is None:
+                rt["proc"].terminate()
+        except OSError:
+            pass
+
+
+def _start_stream(interval):
+    _stop_stream()
+    d = tempfile.mkdtemp(prefix="insider_live_")
+    proc = subprocess.Popen(
+        [sys.executable, os.path.join(ROOT, "src", "realtime", "event_producer.py"),
+         "--dir", d, "--interval", str(interval), "--ticks", "80"],
+        cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    model = models[model_name]
+    train_scores = model.decision_function(X)
+    scorer = RealTimeScorer(os.path.join(d, "events.jsonl"), model, feature_cols, train_mean, train_std,
+                            train_scores.min(), train_scores.max())
+    st.session_state["rt"] = {"proc": proc, "dir": d, "scorer": scorer, "done": False, "model": model_name}
+
+
+with tab_rt:
+    st.subheader("Real-time monitoring (micro-batch)")
+    st.caption(
+        "A separate process plays the organisation's log pipeline and appends events to a log file "
+        "(one simulated working day per tick). The scorer tails that file, rebuilds each user's features "
+        "over a 30-day sliding window, scores them with the selected model and raises an alert when risk "
+        "crosses 70. Risk is on an absolute scale learned from the training population, so quiet users stay "
+        "low. This is micro-batch (seconds of delay), not per-event streaming."
+    )
+    r1, r2, r3 = st.columns(3)
+    rt_users = ld.create_live_cohort(n=12, seed=123).user_id.tolist()
+    rt_user = r1.selectbox("Insider to attack", rt_users, index=2, key="rt_user")
+    rt_scen = r2.selectbox("Attack scenario", SCENARIOS, index=1, key="rt_scen")
+    rt_interval = r3.slider("Seconds per simulated day", 0.5, 5.0, 1.5, 0.5, key="rt_interval")
+    b1, b2, b3 = st.columns(3)
+    if b1.button("▶ Start stream", type="primary", key="rt_start"):
+        _start_stream(rt_interval)
+    if b2.button("💥 Inject attack now", key="rt_inject"):
+        rt = st.session_state.get("rt")
+        if rt and not rt["done"]:
+            with open(os.path.join(rt["dir"], "control.json"), "w", encoding="utf-8") as f:
+                json.dump({"nonce": uuid.uuid4().hex, "user": rt_user, "scenario": rt_scen}, f)
+            st.toast(f"Attack `{rt_scen}` will be injected for {rt_user} on the next simulated day")
+        else:
+            st.warning("Start the stream first.")
+    if b3.button("⏹ Stop", key="rt_stop"):
+        _stop_stream()
+        if st.session_state.get("rt"):
+            st.session_state["rt"]["done"] = True
+
+    rt_state = st.session_state.get("rt")
+    rt_running = bool(rt_state and not rt_state["done"])
+
+    def _rt_panel():
+        rt = st.session_state.get("rt")
+        if not rt:
+            st.info("Press **Start stream**, wait a few ticks, then press **Inject attack now** and watch the risk and the alert.")
+            return
+        scorer = rt["scorer"]
+        state = scorer.poll()
+        if state is None and rt["proc"].poll() is not None and not rt["done"]:
+            rt["done"] = True
+            st.rerun()  # full rerun so the auto-refresh stops
+        state = scorer.last_state
+        if state is None:
+            st.info("Waiting for the first events...")
+            return
+        alerts = scorer.alerts
+        truth_users = {t["user"] for t in scorer.truth}
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Tick", state["tick"])
+        m2.metric("Simulated date", str(state["sim_date"]))
+        m3.metric("Events ingested", f"{scorer.n_events:,}")
+        m4.metric("Last alert latency", f"{alerts[-1]['latency_s']:.2f} s" if alerts else "-")
+        st.caption(f"Status: {'🟢 streaming' if not rt['done'] else '⚪ stream ended'} - model: {rt['model']}")
+
+        hist = scorer.history_df()
+        top = state["risk_table"].user_id.head(4).tolist()
+        cols = list(dict.fromkeys(top + ([rt_user] if rt_user in hist.columns else [])))
+        chart = hist[cols].copy()
+        chart["alert threshold"] = 70
+        st.line_chart(chart, height=280)
+        st.dataframe(state["risk_table"].head(8).rename(columns={"user_id": "User", "anomaly_score": "Raw score", "risk_score": "Risk (0-100)"}),
+                     width="stretch", hide_index=True)
+        for a in reversed(alerts[-5:]):
+            tag = "matches the injected attack" if a["user_id"] in truth_users else "NOT an injected attack (false alarm)"
+            st.error(f"🚨 ALERT: {a['user_id']} risk {a['risk_score']:.0f}/100 on simulated day {a['sim_date']} "
+                     f"(tick {a['tick']}), raised {a['latency_s']:.2f}s after the logs were written - {tag}")
+
+    st.fragment(run_every=1.0 if rt_running else None)(_rt_panel)()
 
 with tab_live:
     st.subheader("Live feed simulation")
@@ -225,7 +331,7 @@ with tab_graph:
     min_links = st.slider("Minimum emails between two users to draw a link", 1, 15, 7,
                           help="Lower = more links (denser, slower to lay out). 7 keeps the strongest ~5%.")
     focus_options = ["(whole organisation)"] + data["features"].user_id.tolist()
-    focus_choice = st.selectbox("Focus on a user's 2-hop neighbourhood", focus_options, index=0)
+    focus_choice = st.selectbox("Focus on one user and their direct contacts", focus_options, index=0)
     focus_user = "" if focus_choice == focus_options[0] else focus_choice
     html = _graph_html(focus_user, model_name, min_links, models, X, data["features"], data["labels"], data)
     st.iframe(html, height=700)  # HTML is generated from the simulated dataset only (no user input)
