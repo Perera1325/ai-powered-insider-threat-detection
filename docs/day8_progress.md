@@ -15,7 +15,7 @@
 3. `src/robust_evaluation.py` - 8 unseen seeds x 200 users x 10 insiders, plus an attack-strength stress test.
 4. `src/pyvis_graph.py` - interactive risk-coloured graph, embedded in the dashboard.
 5. 3 new e-mail recipient features (28 features now).
-6. 40 pytest tests incl. the real Streamlit app (`AppTest`), CI workflow, deterministic seeds/params on the generators.
+6. 48 pytest tests incl. the real Streamlit app (`AppTest`), CI workflow, deterministic seeds/params on the generators.
 
 ## Findings worth putting in the report
 - **Autoencoder memorisation:** AUC fell 0.95 -> 0.38 as training epochs rose 10 -> 100 on ~100 users. The few extreme
@@ -25,3 +25,12 @@
 - **Perfect scores were an artefact of one easy dataset:** on unseen seeds the best model is 0.998 AUC but precision@k is
   0.66-0.94 depending on the model, and every model degrades for low-and-slow attacks.
 - Hyper-parameters were tuned on the original dataset and validated on unseen seeds; see `docs/final_test_report.md` limitations.
+
+## Dashboard fixes after first real-browser run
+- **Graph hairball:** the whole-org graph drew ~5,000 edges. Now only strong e-mail links are drawn (slider, default >= 7 emails),
+  low-risk users are unlabelled, insiders have a black outline, shared folders are boxes, straight edges.
+- **"Stuck" UI:** (1) all six models trained at start-up (~25 s) -> now trained lazily; (2) the from-scratch SHAP/LIME engine took
+  13-47 s per click -> removed from the UI (real `shap`/`lime` take < 1 s; scratch remains an automatic fallback);
+  (3) alert table, explanations, graph and neighbourhood plot were recomputed on every widget change -> cached.
+- Measured (AppTest): first render 6.3 s, slider/model change ~1.3 s, first switch to the Keras autoencoder 3.5 s.
+- The `ConnectionResetError [WinError 10054]` in the Git Bash console is a harmless Windows asyncio message printed when the browser tab reloads/closes.

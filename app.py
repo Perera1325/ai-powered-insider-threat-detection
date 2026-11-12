@@ -42,16 +42,36 @@ def _feature_matrix(_features):
 
 
 @st.cache_data
-def _graph_html(focus_user, model_name, _models, _X, _features, _labels, _data):
+def _graph_html(focus_user, model_name, min_edge_weight, _models, _X, _features, _labels, _data):
     _, risk = du.score_users(_models, model_name, _X)
     risk_by_user = dict(zip(_features.user_id, risk))
-    G = du.build_full_graph(_data)
-    return build_pyvis_html(G, risk_by_user, _labels, focus_user=focus_user or None)
+    return build_pyvis_html(_full_graph(_data), risk_by_user, _labels, focus_user=focus_user or None,
+                            min_edge_weight=min_edge_weight)
 
 
 @st.cache_resource
 def _trained_models(_X):
-    return du.train_models(_X)
+    return du.LazyModels(_X)  # each model trains on first use only
+
+
+@st.cache_resource
+def _full_graph(_data):
+    return du.build_full_graph(_data)
+
+
+@st.cache_data(show_spinner=False)
+def _alert_table(model_name, top_k, _features, _labels, _models, _X):
+    return du.build_alert_table(_features, _labels, _models, model_name, _X, top_k=top_k)
+
+
+@st.cache_data(show_spinner=False)
+def _explain(model_name, uid, _models, _X, _feature_cols, _user_ids):
+    return du.explain_user(_models, model_name, _X, _feature_cols, _user_ids, uid, engine="library")
+
+
+@st.cache_resource(show_spinner=False)
+def _neighbourhood_fig(uid, _data):
+    return du.subgraph_figure(_full_graph(_data), uid, radius=1)
 
 
 data = _load_data()
@@ -69,10 +89,6 @@ with st.sidebar:
     st.header("Controls")
     model_name = st.selectbox("Detection model", du.MODEL_CHOICES, index=0)
     top_k = st.slider("Number of alerts to show", min_value=5, max_value=30, value=15)
-    explain_engine = st.radio(
-        "Explanation engine", ["library", "scratch"], index=0,
-        help="library = real `shap` + `lime` packages; scratch = this project's from-scratch versions",
-    )
     st.divider()
     st.caption(
         "`is_malicious` / `scenario` columns show the ground-truth label "
@@ -87,7 +103,7 @@ tab_alerts, tab_live, tab_graph, tab_models = st.tabs(
 )
 
 with tab_alerts:
-    alert_df = du.build_alert_table(data["features"], data["labels"], models, model_name, X, top_k=top_k)
+    alert_df = _alert_table(model_name, top_k, data["features"], data["labels"], models, X)
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Users monitored", len(data["features"]))
@@ -113,7 +129,7 @@ with tab_alerts:
         c3.metric("Ground-truth label", "Malicious" if row.is_malicious else "Normal")
 
         with st.spinner("Computing SHAP / LIME explanation..."):
-            shap_s, lime_s = du.explain_user(models, model_name, X, feature_cols, user_ids, selected_uid, engine=explain_engine)
+            shap_s, lime_s = _explain(model_name, selected_uid, models, X, feature_cols, user_ids)
             fig = du.explanation_figure(shap_s, lime_s, selected_uid)
         st.pyplot(fig)
         st.caption(
@@ -124,8 +140,7 @@ with tab_alerts:
         )
 
         st.subheader(f"{selected_uid}'s resource/relationship neighbourhood")
-        G = du.build_full_graph(data)
-        subfig = du.subgraph_figure(G, selected_uid, radius=1)
+        subfig = _neighbourhood_fig(selected_uid, data)
         if subfig:
             st.pyplot(subfig)
 
@@ -207,10 +222,12 @@ with tab_graph:
         "black outline = ground-truth insider (demo dataset only); squares = shared resources; "
         "node size = degree. Drag, zoom and hover for details."
     )
+    min_links = st.slider("Minimum emails between two users to draw a link", 1, 15, 7,
+                          help="Lower = more links (denser, slower to lay out). 7 keeps the strongest ~5%.")
     focus_options = ["(whole organisation)"] + data["features"].user_id.tolist()
     focus_choice = st.selectbox("Focus on a user's 2-hop neighbourhood", focus_options, index=0)
     focus_user = "" if focus_choice == focus_options[0] else focus_choice
-    html = _graph_html(focus_user, model_name, models, X, data["features"], data["labels"], data)
+    html = _graph_html(focus_user, model_name, min_links, models, X, data["features"], data["labels"], data)
     st.iframe(html, height=700)  # HTML is generated from the simulated dataset only (no user input)
     with st.expander("Static graph + centrality note"):
         st.image(

@@ -35,7 +35,7 @@ build plan.
 - [x] Day 5 — Autoencoder (from scratch) + graph analysis (NetworkX)
 - [x] Day 6 — Explainable AI (from-scratch SHAP + LIME)
 - [x] Day 7 — Streamlit dashboard + final integration
-- [x] Day 8 — real libraries wired in (scikit-learn IsolationForest/OneClassSVM, TensorFlow/Keras autoencoder, `shap`, `lime`), multi-seed robust evaluation, interactive PyVis graph, recipient-metadata email features, 40-test pytest suite, dashboard verified with real Streamlit
+- [x] Day 8 — real libraries wired in (scikit-learn IsolationForest/OneClassSVM, TensorFlow/Keras autoencoder, `shap`, `lime`), multi-seed robust evaluation, interactive PyVis graph, recipient-metadata email features, 48-test pytest suite, dashboard verified with real Streamlit
 
 Daily write-ups: [Day 1](docs/day1_progress.md) · [Day 2](docs/day2_progress.md) ·
 [Day 3](docs/day3_progress.md) · [Day 4](docs/day4_progress.md) · [Day 5](docs/day5_progress.md) ·
@@ -80,9 +80,9 @@ src/
   dashboard_utils.py           # Day 7: testable core logic behind the dashboard
   live_demo.py                  # Live-demo mode: real-time simulated feed + injection
 app.py                         # Day 7: Streamlit SOC dashboard (streamlit run app.py)
-tests/                          # Day 8: pytest suite (40 tests) incl. the real Streamlit app via AppTest
+tests/                          # Day 8: pytest suite (48 tests) incl. the real Streamlit app via AppTest
   test_data.py  test_pipeline.py  test_models.py  test_explain_graph.py
-  test_live_demo.py  test_dashboard_app.py  conftest.py
+  test_live_demo.py  test_dashboard_app.py  test_performance.py  conftest.py
 .github/workflows/tests.yml     # CI: runs the suite on every push
 data/
   raw/                  # place manually-downloaded external datasets here (gitignored)

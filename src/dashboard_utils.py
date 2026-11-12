@@ -32,7 +32,8 @@ DATA_DIR = "data/processed/full"
 
 SCRATCH_MODELS = ["Isolation Forest", "Autoencoder", "Mahalanobis detector"]
 REAL_MODELS = ["Isolation Forest (sklearn)", "One-Class SVM (sklearn)", "Autoencoder (Keras)"]
-MODEL_CHOICES = REAL_MODELS + SCRATCH_MODELS  # real-library models first (the ones named in the proposal)
+# real-library models first (the ones named in the proposal); Keras only if TensorFlow is installed
+MODEL_CHOICES = [m for m in REAL_MODELS + SCRATCH_MODELS if m != "Autoencoder (Keras)" or tensorflow_available()]
 
 
 def load_data():
@@ -79,6 +80,40 @@ def train_models(X):
     if tensorflow_available():
         models["Autoencoder (Keras)"] = KerasAutoencoder().fit(X)
     return {k: models[k] for k in MODEL_CHOICES if k in models}
+
+
+class LazyModels(dict):
+    """Trains each detector the first time it is selected (instead of all six at
+    startup: ~25 s -> ~1 s to first render). Behaves like the dict from train_models()."""
+
+    def __init__(self, X):
+        super().__init__()
+        self._X = X
+
+    def __missing__(self, name):
+        if name not in MODEL_CHOICES:
+            raise KeyError(name)
+        self[name] = _train_one(name, self._X)
+        return self[name]
+
+    def __contains__(self, name):
+        return name in MODEL_CHOICES
+
+
+def _train_one(name, X):
+    if name == "Isolation Forest (sklearn)":
+        return SklearnIsolationForest().fit(X)
+    if name == "One-Class SVM (sklearn)":
+        return SklearnOneClassSVM().fit(X)
+    if name == "Autoencoder (Keras)":
+        return KerasAutoencoder().fit(X)
+    if name == "Isolation Forest":
+        return IsolationForestScratch(n_trees=300, sample_size=64, random_state=42).fit(X)
+    if name == "Autoencoder":
+        return AutoencoderScratch(hidden_dim=16, bottleneck_dim=2, lr=0.03, epochs=200, random_state=42).fit(X)
+    if name == "Mahalanobis detector":
+        return MahalanobisDetector().fit(X)
+    raise KeyError(name)
 
 
 def score_users(models, model_name, X):

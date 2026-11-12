@@ -46,13 +46,6 @@ def test_every_model_choice_renders(model):
     assert not at.exception, (model, [e.value for e in at.exception])
 
 
-def test_scratch_explanation_engine_renders():
-    at = AppTest.from_file(APP, default_timeout=T)
-    at.run()
-    at.sidebar.radio[0].set_value("scratch").run()
-    assert not at.exception
-
-
 def test_live_demo_button_runs_and_raises_alert():
     at = AppTest.from_file(APP, default_timeout=T)
     at.run()

@@ -28,13 +28,16 @@ def _risk_colour(risk):
     return f"#{r:02x}{g:02x}50"
 
 
-def build_pyvis_html(G, risk_by_user=None, labels=None, focus_user=None, height="650px", min_edge_weight=3):
+def build_pyvis_html(G, risk_by_user=None, labels=None, focus_user=None, height="650px", min_edge_weight=7, label_risk=50):
     """Returns the HTML string of an interactive PyVis network.
 
     risk_by_user : dict user_id -> 0..100 risk score (optional)
     labels       : DataFrame with user_id,is_malicious,scenario (optional)
     focus_user   : if given, only the 2-hop neighbourhood of this user is drawn
-    min_edge_weight : hide weak user-user email edges to keep the graph readable
+    min_edge_weight : hide user-user email links with fewer interactions than this
+                      (default 7 keeps ~5% of links - the whole-org graph has ~4,700)
+    label_risk   : in the whole-organisation view only users at/above this risk (and
+                   ground-truth insiders) get a text label; everyone is still hoverable
     """
     from pyvis.network import Network
 
@@ -54,8 +57,8 @@ def build_pyvis_html(G, risk_by_user=None, labels=None, focus_user=None, height=
     net = Network(height=height, width="100%", bgcolor="#ffffff", font_color="#222222", cdn_resources="in_line")
     for n, d in H.nodes(data=True):
         if d.get("node_type") == "resource":
-            net.add_node(n, label=n.replace("folder:", ""), shape="square", color="#f2b134", size=28,
-                         title=f"Shared resource: {n}")
+            net.add_node(n, label=n.replace("folder:", ""), shape="box", color="#f2b134", mass=8,
+                         font={"size": 18, "color": "#111111"}, title=f"Shared resource: {n}")
             continue
         risk = float(risk_by_user.get(n, 0.0))
         info = label_map.get(n, {})
@@ -64,12 +67,19 @@ def build_pyvis_html(G, risk_by_user=None, labels=None, focus_user=None, height=
             tip += f" | GROUND TRUTH: {info.get('scenario')}"
         size = 8 + 0.25 * H.degree(n)
         border = "#000000" if info.get("is_malicious") or n == focus_user else _risk_colour(risk)
-        net.add_node(n, label=n, color={"background": _risk_colour(risk), "border": border},
-                     borderWidth=3 if border == "#000000" else 1, size=size, title=tip)
+        show_label = bool(focus_user) or risk >= label_risk or border == "#000000"
+        net.add_node(n, label=n if show_label else " ", color={"background": _risk_colour(risk), "border": border},
+                     borderWidth=3 if border == "#000000" else 1, size=size, title=tip,
+                     font={"size": 16, "color": "#111111", "strokeWidth": 3, "strokeColor": "#ffffff"})
     for u, v, d in H.edges(data=True):
-        net.add_edge(u, v, value=float(d.get("weight", 1)), color="#cccccc",
+        is_file = d.get("edge_type") == "file_access"
+        net.add_edge(u, v, width=0.4 if is_file else min(1 + float(d.get("weight", 1)) / 6, 4),
+                     color="#e3e3e3" if is_file else "#9aa5b1",
                      title=f"{d.get('edge_type', '')} (weight {d.get('weight', 1)})")
-    net.barnes_hut(gravity=-4000, spring_length=120)
+    net.barnes_hut(gravity=-9000, central_gravity=0.15, spring_length=230, spring_strength=0.02,
+                   damping=0.5, overlap=0.6)
+    net.set_options('''{"physics": {"stabilization": {"enabled": true, "iterations": 250, "fit": true}},
+                       "edges": {"smooth": false}, "interaction": {"hover": true, "tooltipDelay": 80}}''')
     return net.generate_html(notebook=False)
 
 

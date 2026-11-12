@@ -2,7 +2,7 @@
 
 Environment: 3.13.18 sklearn 1.9.1 tf 2.21.0 shap 0.54.1 streamlit 1.67.0 pandas 3.1.1 numpy 2.5.4
 
-**Result: 40 / 40 tests passed** (`python -m pytest -q tests`, ~1.5 min).
+**Result: 48 / 48 tests passed** (`python -m pytest -q tests`, ~1 min).
 
 ## What was tested
 
@@ -14,7 +14,8 @@ Environment: 3.13.18 sklearn 1.9.1 tf 2.21.0 shap 0.54.1 streamlit 1.67.0 pandas
 | Explainability | `test_explain_graph.py` | real SHAP satisfies additivity (sum of values = f(x) - f(background)); SHAP puts logon features on top for the after-hours insider and e-mail features on top for the exfiltration insider; scratch and library engines agree on direction; LIME returns one weight per feature |
 | Graph | `test_explain_graph.py` | all users + shared resources present; PyVis HTML is self-contained and marks insiders |
 | Live demo | `test_live_demo.py` | injecting an attack makes the insider's risk jump above every pre-attack value and reach HIGH (>= 70) |
-| Dashboard | `test_dashboard_app.py` | the **real** Streamlit app (Streamlit `AppTest`) renders with no exception; metrics, 4 tabs, figures; every model choice renders; both explanation engines work; clicking "Start Live Feed" runs the simulation and raises an ALERT |
+| Dashboard | `test_dashboard_app.py` | the **real** Streamlit app (Streamlit `AppTest`) renders with no exception; metrics, 4 tabs, figures; every model choice renders; clicking "Start Live Feed" runs the simulation and raises an ALERT |
+| Responsiveness | `test_performance.py` | models train lazily (first render ~6 s instead of ~30 s); every model's SHAP/LIME explanation < 15 s; the whole-organisation PyVis graph stays under 900 edges (was 5,000+) and labels only risky users |
 
 A real `streamlit run app.py --server.headless true` server was also started and
 answered `/_stcore/health` = `ok` and `/` = HTTP 200.
@@ -33,7 +34,6 @@ answered `/_stcore/health` = `ok` and `/` = HTTP 200.
 | `test_every_model_choice_renders[Isolation Forest]` | PASS |
 | `test_every_model_choice_renders[Autoencoder]` | PASS |
 | `test_every_model_choice_renders[Mahalanobis detector]` | PASS |
-| `test_scratch_explanation_engine_renders` | PASS |
 | `test_live_demo_button_runs_and_raises_alert` | PASS |
 | `test_all_dataset_files_exist_and_nonempty PASSED   ` | PASS |
 | `test_users_and_labels_cover_same_users PASSED      ` | PASS |
@@ -59,6 +59,15 @@ answered `/_stcore/health` = `ok` and `/` = HTTP 200.
 | `test_every_dashboard_model_detects_insiders_on_committed_dataset[Autoencoder]` | PASS |
 | `test_every_dashboard_model_detects_insiders_on_committed_dataset[Mahalanobis detector]` | PASS |
 | `test_models_do_not_use_labels PASSED             ` | PASS |
+| `test_models_train_lazily PASSED             ` | PASS |
+| `test_explanation_is_interactive_speed[Isolation Forest (sklearn)]` | PASS |
+| `test_explanation_is_interactive_speed[One-Class SVM (sklearn)]` | PASS |
+| `test_explanation_is_interactive_speed[Autoencoder (Keras)]` | PASS |
+| `test_explanation_is_interactive_speed[Isolation Forest]` | PASS |
+| `test_explanation_is_interactive_speed[Autoencoder]` | PASS |
+| `test_explanation_is_interactive_speed[Mahalanobis detector]` | PASS |
+| `test_whole_org_graph_is_sparse_enough_to_read` | PASS |
+| `test_whole_org_graph_labels_only_risky_users` | PASS |
 | `test_pipeline_is_reproducible_for_a_seed PASSED` | PASS |
 | `test_different_seeds_give_different_data PASSED` | PASS |
 | `test_injection_creates_expected_number_of_insiders` | PASS |
