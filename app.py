@@ -19,11 +19,13 @@ that separation mattered in this project's dev environment).
 import sys
 import time
 
+import pandas as pd
 import streamlit as st
 
 sys.path.insert(0, "src")
 import dashboard_utils as du
 import live_demo as ld
+from pyvis_graph import build_pyvis_html
 from inject_anomalies import SCENARIOS
 
 st.set_page_config(page_title="Insider Threat Detection - SOC Dashboard", layout="wide")
@@ -37,6 +39,14 @@ def _load_data():
 @st.cache_data
 def _feature_matrix(_features):
     return du.get_feature_matrix(_features)
+
+
+@st.cache_data
+def _graph_html(focus_user, model_name, _models, _X, _features, _labels, _data):
+    _, risk = du.score_users(_models, model_name, _X)
+    risk_by_user = dict(zip(_features.user_id, risk))
+    G = du.build_full_graph(_data)
+    return build_pyvis_html(G, risk_by_user, _labels, focus_user=focus_user or None)
 
 
 @st.cache_resource
@@ -59,6 +69,10 @@ with st.sidebar:
     st.header("Controls")
     model_name = st.selectbox("Detection model", du.MODEL_CHOICES, index=0)
     top_k = st.slider("Number of alerts to show", min_value=5, max_value=30, value=15)
+    explain_engine = st.radio(
+        "Explanation engine", ["library", "scratch"], index=0,
+        help="library = real `shap` + `lime` packages; scratch = this project's from-scratch versions",
+    )
     st.divider()
     st.caption(
         "`is_malicious` / `scenario` columns show the ground-truth label "
@@ -84,7 +98,7 @@ with tab_alerts:
     st.subheader(f"Top {top_k} alerts - {model_name}")
     st.dataframe(
         alert_df[["rank", "user_id", "risk_score", "risk_level", "is_malicious", "scenario"]],
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
@@ -99,7 +113,7 @@ with tab_alerts:
         c3.metric("Ground-truth label", "Malicious" if row.is_malicious else "Normal")
 
         with st.spinner("Computing SHAP / LIME explanation..."):
-            shap_s, lime_s = du.explain_user(models, model_name, X, feature_cols, user_ids, selected_uid)
+            shap_s, lime_s = du.explain_user(models, model_name, X, feature_cols, user_ids, selected_uid, engine=explain_engine)
             fig = du.explanation_figure(shap_s, lime_s, selected_uid)
         st.pyplot(fig)
         st.caption(
@@ -167,7 +181,7 @@ with tab_live:
                 state["risk_table"].head(8).rename(
                     columns={"user_id": "User", "anomaly_score": "Raw score", "risk_score": "Risk (0-100)"}
                 ),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -187,27 +201,47 @@ with tab_live:
         )
 
 with tab_graph:
-    st.subheader("Full user-resource interaction graph")
-    st.image(
-        "docs/figures/user_resource_graph.png",
-        caption="Red = known malicious users, blue = normal users, yellow squares = shared resources",
-        use_container_width=True,
-    )
+    st.subheader("Interactive user-resource interaction graph (PyVis)")
     st.caption(
-        "See docs/day5_progress.md - graph centrality alone does not separate "
-        "malicious users in the current dataset; documented there as an honest "
-        "limitation with a concrete fix recommendation."
+        "Node colour = risk score from the selected model (green = low, red = high); "
+        "black outline = ground-truth insider (demo dataset only); squares = shared resources; "
+        "node size = degree. Drag, zoom and hover for details."
     )
+    focus_options = ["(whole organisation)"] + data["features"].user_id.tolist()
+    focus_choice = st.selectbox("Focus on a user's 2-hop neighbourhood", focus_options, index=0)
+    focus_user = "" if focus_choice == focus_options[0] else focus_choice
+    html = _graph_html(focus_user, model_name, models, X, data["features"], data["labels"], data)
+    st.iframe(html, height=700)  # HTML is generated from the simulated dataset only (no user input)
+    with st.expander("Static graph + centrality note"):
+        st.image(
+            "docs/figures/user_resource_graph.png",
+            caption="Red = known malicious users, blue = normal users, yellow squares = shared resources",
+            width="stretch",
+        )
+        st.caption(
+            "See docs/day5_progress.md - graph centrality alone does not separate "
+            "malicious users in the current dataset; documented there as an honest limitation."
+        )
 
 with tab_models:
     st.subheader("Model comparison (Day 4 + Day 5)")
-    st.dataframe(data["model_comparison"].round(3), use_container_width=True)
+    st.dataframe(data["model_comparison"].round(3), width="stretch")
     col1, col2 = st.columns(2)
     with col1:
-        st.image("docs/figures/day4_roc_curves.png", caption="Day 4 ROC curves", use_container_width=True)
+        st.image("docs/figures/day4_roc_curves.png", caption="Day 4 ROC curves", width="stretch")
     with col2:
-        st.image("docs/figures/day5_autoencoder.png", caption="Day 5 Autoencoder training + ROC", use_container_width=True)
+        st.image("docs/figures/day5_autoencoder.png", caption="Day 5 Autoencoder training + ROC", width="stretch")
     st.caption(
-        "All models achieve perfect separation on this dataset - read "
-        "docs/day4_progress.md's caveat before quoting this as real-world accuracy."
+        "All models achieve near-perfect separation on this single 100-user dataset - read "
+        "docs/day4_progress.md's caveat, and see the multi-seed evaluation below for a realistic picture."
     )
+    st.subheader("Robust evaluation (8 unseen datasets, 200 users, 10 insiders each)")
+    try:
+        robust = pd.read_csv("data/processed/full/robust_evaluation.csv")
+        summary = robust.groupby("model")[["roc_auc", "precision@k", "recall@k"]].agg(["mean", "std"]).round(3)
+        summary.columns = [f"{a} ({b})" for a, b in summary.columns]
+        st.dataframe(summary.sort_values("roc_auc (mean)", ascending=False), width="stretch")
+        st.image("docs/figures/robust_evaluation.png", width="stretch")
+        st.caption("Right panel: detection quality as the injected attack is weakened (low-and-slow insiders). See docs/robust_evaluation.md.")
+    except FileNotFoundError:
+        st.info("Run `python3 src/robust_evaluation.py` to generate the multi-seed evaluation.")

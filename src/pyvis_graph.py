@@ -1,0 +1,92 @@
+"""
+Interactive PyVis version of the user-resource graph (proposal: "Graph
+Analysis - NetworkX, PyVis"). Produces a self-contained HTML file that
+can be opened in any browser or embedded in the Streamlit dashboard.
+
+Node colour = risk score (green -> red); square nodes = shared resources;
+node size = degree. Hover a node to see its department, risk score and
+the injected scenario (ground truth, demo dataset only).
+
+Run:  python3 src/pyvis_graph.py   -> docs/figures/user_resource_graph.html
+"""
+
+import sys
+
+import networkx as nx
+import pandas as pd
+
+sys.path.insert(0, "src")
+
+DATA_DIR = "data/processed/full"
+OUT_HTML = "docs/figures/user_resource_graph.html"
+
+
+def _risk_colour(risk):
+    """0 -> green, 100 -> red (hex)."""
+    r = int(min(255, 2 * 255 * risk / 100))
+    g = int(min(255, 2 * 255 * (1 - risk / 100)))
+    return f"#{r:02x}{g:02x}50"
+
+
+def build_pyvis_html(G, risk_by_user=None, labels=None, focus_user=None, height="650px", min_edge_weight=3):
+    """Returns the HTML string of an interactive PyVis network.
+
+    risk_by_user : dict user_id -> 0..100 risk score (optional)
+    labels       : DataFrame with user_id,is_malicious,scenario (optional)
+    focus_user   : if given, only the 2-hop neighbourhood of this user is drawn
+    min_edge_weight : hide weak user-user email edges to keep the graph readable
+    """
+    from pyvis.network import Network
+
+    risk_by_user = risk_by_user or {}
+    label_map = {}
+    if labels is not None:
+        label_map = labels.set_index("user_id")[["is_malicious", "scenario"]].to_dict("index")
+
+    if focus_user and focus_user in G:
+        nodes = nx.ego_graph(G, focus_user, radius=2).nodes
+        H = G.subgraph(nodes).copy()
+    else:
+        H = G.copy()
+    weak = [(u, v) for u, v, d in H.edges(data=True) if d.get("edge_type") == "email" and d.get("weight", 1) < min_edge_weight]
+    H.remove_edges_from(weak)
+
+    net = Network(height=height, width="100%", bgcolor="#ffffff", font_color="#222222", cdn_resources="in_line")
+    for n, d in H.nodes(data=True):
+        if d.get("node_type") == "resource":
+            net.add_node(n, label=n.replace("folder:", ""), shape="square", color="#f2b134", size=28,
+                         title=f"Shared resource: {n}")
+            continue
+        risk = float(risk_by_user.get(n, 0.0))
+        info = label_map.get(n, {})
+        tip = f"{n} | dept: {d.get('department', '?')} | risk: {risk:.1f}/100"
+        if info.get("is_malicious"):
+            tip += f" | GROUND TRUTH: {info.get('scenario')}"
+        size = 8 + 0.25 * H.degree(n)
+        border = "#000000" if info.get("is_malicious") or n == focus_user else _risk_colour(risk)
+        net.add_node(n, label=n, color={"background": _risk_colour(risk), "border": border},
+                     borderWidth=3 if border == "#000000" else 1, size=size, title=tip)
+    for u, v, d in H.edges(data=True):
+        net.add_edge(u, v, value=float(d.get("weight", 1)), color="#cccccc",
+                     title=f"{d.get('edge_type', '')} (weight {d.get('weight', 1)})")
+    net.barnes_hut(gravity=-4000, spring_length=120)
+    return net.generate_html(notebook=False)
+
+
+def main():
+    import dashboard_utils as du
+
+    data = du.load_data()
+    X, feature_cols, _, _ = du.get_feature_matrix(data["features"])
+    models = du.train_models(X)
+    _, risk = du.score_users(models, "Isolation Forest", X)
+    risk_by_user = dict(zip(data["features"].user_id, risk))
+    G = du.build_full_graph(data)
+    html = build_pyvis_html(G, risk_by_user, data["labels"])
+    with open(OUT_HTML, "w", encoding="utf-8") as f:
+        f.write(html)
+    print(f"Wrote {OUT_HTML} ({len(html)//1024} KB, {G.number_of_nodes()} nodes, {G.number_of_edges()} edges)")
+
+
+if __name__ == "__main__":
+    main()

@@ -21,6 +21,8 @@ sys.path.insert(0, "src")
 from models.isolation_forest import IsolationForestScratch
 from models.autoencoder import AutoencoderScratch
 from models.mahalanobis import MahalanobisDetector
+from models.real_models import KerasAutoencoder, SklearnIsolationForest, SklearnOneClassSVM, tensorflow_available
+from explain.real_explainers import lime_values_real, shap_values_real
 from train_baseline_models import standardize
 from explain.kernel_shap import kernel_shap_values
 from explain.lime_explainer import lime_explain
@@ -28,7 +30,9 @@ from graph_analysis import build_graph, _folder_category  # noqa: F401 (re-expor
 
 DATA_DIR = "data/processed/full"
 
-MODEL_CHOICES = ["Isolation Forest", "Autoencoder", "Mahalanobis detector"]
+SCRATCH_MODELS = ["Isolation Forest", "Autoencoder", "Mahalanobis detector"]
+REAL_MODELS = ["Isolation Forest (sklearn)", "One-Class SVM (sklearn)", "Autoencoder (Keras)"]
+MODEL_CHOICES = REAL_MODELS + SCRATCH_MODELS  # real-library models first (the ones named in the proposal)
 
 
 def load_data():
@@ -65,7 +69,16 @@ def train_models(X):
     iso = IsolationForestScratch(n_trees=300, sample_size=64, random_state=42).fit(X)
     ae = AutoencoderScratch(hidden_dim=16, bottleneck_dim=2, lr=0.03, epochs=200, random_state=42).fit(X)
     maha = MahalanobisDetector().fit(X)
-    return {"Isolation Forest": iso, "Autoencoder": ae, "Mahalanobis detector": maha}
+    models = {
+        "Isolation Forest (sklearn)": SklearnIsolationForest().fit(X),
+        "One-Class SVM (sklearn)": SklearnOneClassSVM().fit(X),
+        "Isolation Forest": iso,
+        "Autoencoder": ae,
+        "Mahalanobis detector": maha,
+    }
+    if tensorflow_available():
+        models["Autoencoder (Keras)"] = KerasAutoencoder().fit(X)
+    return {k: models[k] for k in MODEL_CHOICES if k in models}
 
 
 def score_users(models, model_name, X):
@@ -98,7 +111,11 @@ def build_alert_table(features, labels, models, model_name, X, top_k=15):
     return df.head(top_k)
 
 
-def explain_user(models, model_name, X, feature_cols, user_ids, uid, n_shap_samples=800, n_lime_samples=600):
+def explain_user(models, model_name, X, feature_cols, user_ids, uid, n_shap_samples=800, n_lime_samples=600,
+                 engine="library"):
+    """engine='library' uses the real `shap` / `lime` packages (falls back to the
+    from-scratch implementations if they are not installed); 'scratch' forces the
+    from-scratch versions."""
     model = models[model_name]
     predict_fn = model.decision_function
     x_idx = np.where(user_ids == uid)[0][0]
@@ -106,8 +123,15 @@ def explain_user(models, model_name, X, feature_cols, user_ids, uid, n_shap_samp
     background = X.mean(axis=0)
     feature_std = np.ones(len(feature_cols))
 
-    phi, base_value = kernel_shap_values(predict_fn, x, background, n_samples=n_shap_samples, random_state=42)
-    lime_coef, _ = lime_explain(predict_fn, x, feature_std, n_samples=n_lime_samples, random_state=42)
+    if engine == "library":
+        try:
+            phi = shap_values_real(predict_fn, x, background, n_samples=n_shap_samples)
+            lime_coef = lime_values_real(predict_fn, x, X, feature_cols, num_samples=n_lime_samples)
+        except ImportError:
+            engine = "scratch"
+    if engine != "library":
+        phi, base_value = kernel_shap_values(predict_fn, x, background, n_samples=n_shap_samples, random_state=42)
+        lime_coef, _ = lime_explain(predict_fn, x, feature_std, n_samples=n_lime_samples, random_state=42)
 
     shap_series = pd.Series(phi, index=feature_cols).sort_values(key=abs, ascending=False)
     lime_series = pd.Series(lime_coef, index=feature_cols).sort_values(key=abs, ascending=False)

@@ -212,15 +212,25 @@ def generate_file(users_df, num_days=NUM_DAYS, start_date=START_DATE):
     return _safe_df(rows, ["user_id", "pc", "filename", "action", "timestamp"])
 
 
-def main():
-    users_df = generate_users()
+def reseed(seed):
+    """Re-seed every RNG used by the generator (for multi-seed experiments)."""
+    Faker.seed(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+
+
+def main(out_dir="data/processed/full", seed=None, num_users=NUM_USERS):
+    import os
+    if seed is not None:
+        reseed(seed)
+    os.makedirs(out_dir, exist_ok=True)
+    users_df = generate_users(num_users)
     logon_df = generate_logon(users_df)
     device_df = generate_device(users_df)
     http_df = generate_http(users_df)
     email_df = generate_email(users_df)
     file_df = generate_file(users_df)
 
-    out_dir = "data/processed/full"
     users_df.to_csv(f"{out_dir}/users.csv", index=False)
     logon_df.to_csv(f"{out_dir}/logon.csv", index=False)
     device_df.to_csv(f"{out_dir}/device.csv", index=False)

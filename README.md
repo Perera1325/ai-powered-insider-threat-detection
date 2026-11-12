@@ -35,17 +35,19 @@ build plan.
 - [x] Day 5 — Autoencoder (from scratch) + graph analysis (NetworkX)
 - [x] Day 6 — Explainable AI (from-scratch SHAP + LIME)
 - [x] Day 7 — Streamlit dashboard + final integration
+- [x] Day 8 — real libraries wired in (scikit-learn IsolationForest/OneClassSVM, TensorFlow/Keras autoencoder, `shap`, `lime`), multi-seed robust evaluation, interactive PyVis graph, recipient-metadata email features, 40-test pytest suite, dashboard verified with real Streamlit
 
 Daily write-ups: [Day 1](docs/day1_progress.md) · [Day 2](docs/day2_progress.md) ·
 [Day 3](docs/day3_progress.md) · [Day 4](docs/day4_progress.md) · [Day 5](docs/day5_progress.md) ·
-[Day 6](docs/day6_progress.md) · [Day 7](docs/day7_progress.md).
+[Day 6](docs/day6_progress.md) · [Day 7](docs/day7_progress.md) · [Day 8](docs/day8_progress.md).
+Final evaluation: [docs/robust_evaluation.md](docs/robust_evaluation.md) · test report: [docs/final_test_report.md](docs/final_test_report.md).
 Generated figures live under [docs/figures/](docs/figures/).
 
 **Read the Day 4-7 write-ups even if you only skim this repo** - each
 documents an honest limitation or a real debugging finding (why the
 "perfect" model scores aren't a real-world accuracy claim, why graph
 analysis came up empty, why LIME was noisier than SHAP, why the
-dashboard is verified via a stub rather than a live run) rather than
+dashboard was first verified via a stub - superseded in Day 8 by real Streamlit tests) rather than
 just reporting clean success. That's deliberate and worth carrying into
 the final report.
 
@@ -71,12 +73,17 @@ src/
   explain/
     kernel_shap.py            # Day 6: from-scratch Kernel SHAP (see note in docs/day6_progress.md)
     lime_explainer.py          # Day 6: from-scratch LIME (see same note)
+  models/real_models.py        # Day 8: scikit-learn IF / One-Class SVM + Keras Autoencoder (drop-in, same interface)
+  explain/real_explainers.py   # Day 8: real `shap` KernelExplainer + `lime` tabular explainer
+  pyvis_graph.py               # Day 8: interactive PyVis user-resource graph (HTML)
+  robust_evaluation.py         # Day 8: 8 unseen seeds + attack-strength stress test
   dashboard_utils.py           # Day 7: testable core logic behind the dashboard
   live_demo.py                  # Live-demo mode: real-time simulated feed + injection
 app.py                         # Day 7: Streamlit SOC dashboard (streamlit run app.py)
-tests/
-  _streamlit_stub.py           # Day 7: minimal streamlit stand-in (see docs/day7_progress.md)
-  smoke_test_dashboard.py      # Day 7: runs app.py end-to-end against the stub (incl. Live Demo tab)
+tests/                          # Day 8: pytest suite (40 tests) incl. the real Streamlit app via AppTest
+  test_data.py  test_pipeline.py  test_models.py  test_explain_graph.py
+  test_live_demo.py  test_dashboard_app.py  conftest.py
+.github/workflows/tests.yml     # CI: runs the suite on every push
 data/
   raw/                  # place manually-downloaded external datasets here (gitignored)
   processed/full/       # generated dataset (users, logon, device, http, email, file, labels)
@@ -90,22 +97,33 @@ docs/
 requirements.txt
 ```
 
-## Training with the real libraries (Google Colab)
+## Real libraries
 
-Everything in this repo's Day 4-6 work was implemented from scratch in
-NumPy because the original dev sandbox could not install scikit-learn/
-TensorFlow/shap/lime (documented in `docs/day4_progress.md` onward). If
-you have access to Google Colab (or any machine with normal internet),
-`notebooks/real_library_training.ipynb` re-runs the same evaluation
-using the actual named libraries - scikit-learn's `IsolationForest` and
-`OneClassSVM`, a TensorFlow/Keras Autoencoder, and real `shap`/`lime` -
-against the exact same dataset already committed here, and compares the
-results to the from-scratch versions.
+Days 4-6 were first written from scratch in NumPy because the original dev
+sandbox could not install scikit-learn / TensorFlow / shap / lime. Day 8 wires
+the real libraries into the main code path (`src/models/real_models.py`,
+`src/explain/real_explainers.py`) and the dashboard offers all of them; the
+from-scratch versions are kept as cross-checks. The Colab notebook
+(`notebooks/real_library_training.ipynb`) still works but is now optional.
 
-**To run it:** open
-`https://colab.research.google.com/github/Perera1325/ai-powered-insider-threat-detection/blob/main/notebooks/real_library_training.ipynb`
-directly in your browser (no download/upload needed - Colab pulls it
-straight from GitHub), then `Runtime > Run all`.
+## Results (honest numbers)
+
+The single 100-user dataset scores ~1.0 for most models, which is not a quality
+claim. `python3 src/robust_evaluation.py` evaluates on **8 unseen datasets**
+(200 users, 10 insiders each) and then weakens the attack (alpha = 1 -> 0.25):
+
+| Model | ROC-AUC (mean ± std) | precision@k |
+|---|---|---|
+| Mahalanobis (scratch) | 0.998 ± 0.002 | 0.94 |
+| Autoencoder (Keras, winsorised) | 0.976 ± 0.023 | 0.85 |
+| Isolation Forest (sklearn) | 0.974 ± 0.024 | 0.83 |
+| Z-score baseline | 0.954 ± 0.027 | 0.84 |
+| Isolation Forest (scratch) | 0.953 ± 0.039 | 0.66 |
+| One-Class SVM (sklearn) | 0.938 ± 0.021 | 0.83 |
+| Autoencoder (scratch) | 0.805 ± 0.123 | 0.59 |
+
+Full tables, the low-and-slow stress test and caveats:
+[docs/robust_evaluation.md](docs/robust_evaluation.md).
 
 ## Live demo mode
 
@@ -134,40 +152,35 @@ python3 src/train_baseline_models.py
 python3 src/train_autoencoder.py
 python3 src/graph_analysis.py
 python3 src/explain_day6.py
+python3 src/pyvis_graph.py          # interactive graph HTML
+python3 src/robust_evaluation.py    # multi-seed evaluation (~3 min)
 
-# smoke-test the dashboard logic without needing streamlit installed:
-python3 tests/smoke_test_dashboard.py
+# run the whole test suite (~1.5 min):
+python -m pytest -q tests
 
-# run the actual dashboard (needs `streamlit` + `pyarrow`, see note below):
+# run the dashboard:
 streamlit run app.py
 ```
 
-## Note on Day 4 models (Isolation Forest / One-Class SVM)
+## Notes on the from-scratch models
 
-Day 4 was built and evaluated in a sandbox whose network proxy could
-not download scikit-learn's scipy dependency in reasonable time
-(verified ~40-50 KB/s on the wheel). Isolation Forest was implemented
-from scratch (pure NumPy, see `src/models/isolation_forest.py`); a
-Mahalanobis-distance detector stands in for One-Class SVM (see
-`src/models/mahalanobis.py`). On a normal connection,
-`pip install scikit-learn` is instant - swap in
-`sklearn.ensemble.IsolationForest` / `sklearn.svm.OneClassSVM` there if
-you want the exact algorithms named in the proposal (same `.fit()` /
-`.decision_function()` interface, drop-in replacement). Full reasoning
-and results are in [docs/day4_progress.md](docs/day4_progress.md).
+`src/models/isolation_forest.py`, `mahalanobis.py` and `autoencoder.py` are the
+Day 4-5 from-scratch implementations. They are kept for comparison. The
+real-library versions are the defaults in the dashboard. Two findings worth
+knowing (details in [docs/robust_evaluation.md](docs/robust_evaluation.md)):
 
-## Note on the dashboard (Day 7)
+- A Keras autoencoder trained for many epochs on ~100 users **memorises the
+  insiders** (AUC fell from 0.95 to 0.38 as epochs went 10 -> 100); winsorised
+  training (inputs clipped to ±3σ) fixes this.
+- scikit-learn's default One-Class SVM `gamma="scale"` is too narrow for 28
+  features (AUC 0.76 vs ~1.0 with a wider kernel).
 
-`app.py` is a full Streamlit dashboard, but this project's dev sandbox
-could not install Streamlit's `pyarrow` dependency (same bandwidth
-issue as scipy/TensorFlow in Day 4/5). The dashboard's actual logic
-(`src/dashboard_utils.py`) was tested directly and via a stub-based
-smoke test (`tests/smoke_test_dashboard.py`) that runs `app.py`
-end-to-end without needing Streamlit installed - but nobody has seen
-it actually render yet. On a normal connection, `pip install streamlit`
-takes seconds; run `streamlit run app.py` and it should just work.
-Please try it and let me know if anything looks off - see
-[docs/day7_progress.md](docs/day7_progress.md) for full details.
+## Dashboard
+
+`streamlit run app.py` - tabs: Alerts (risk table + SHAP/LIME explanation per
+alert), Live Demo (real-time attack injection), Interactive Graph (PyVis), Model
+Comparison (incl. the robust evaluation). It is tested by `tests/test_dashboard_app.py`
+using Streamlit's own `AppTest` runner against the real app.
 
 ## Note on the CERT Insider Threat Dataset
 

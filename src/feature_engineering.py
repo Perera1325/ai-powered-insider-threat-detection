@@ -104,9 +104,19 @@ def build_email_features(email):
     )
     feats = feats.join(ext_g.size().rename("external_email_count"))
     feats = feats.join(ext_g["size_kb"].max().rename("max_external_size_kb"))
-    feats["external_email_count"] = feats["external_email_count"].fillna(0).infer_objects(copy=False)
-    feats["max_external_size_kb"] = feats["max_external_size_kb"].fillna(0).infer_objects(copy=False)
+    feats["external_email_count"] = feats["external_email_count"].fillna(0)
+    feats["max_external_size_kb"] = feats["max_external_size_kb"].fillna(0)
     feats["external_email_ratio"] = feats.external_email_count / feats.email_count
+
+    # Recipient-metadata features (the simulated email log carries no
+    # subject/body text, so "NLP" here is limited to recipient metadata).
+    n_rcpt = email["to"].fillna("").apply(lambda t: len([r for r in str(t).split(";") if r]))
+    rcpt = email.assign(n_rcpt=n_rcpt).groupby("user_id")
+    feats["avg_recipients"] = rcpt["n_rcpt"].mean()
+    feats["max_recipients"] = rcpt["n_rcpt"].max()
+    distinct = email.assign(r=email["to"].fillna("").str.split(";")).explode("r")
+    distinct = distinct[distinct.r.astype(str) != ""]
+    feats["distinct_recipients"] = distinct.groupby("user_id")["r"].nunique()
     return feats.fillna(0)
 
 
@@ -145,10 +155,11 @@ def build_file_features(file_df):
     else:
         feats["max_daily_shared_folder_events"] = 0
 
-    return feats.fillna(0).infer_objects(copy=False)
+    return feats.fillna(0)
 
 
-def main():
+def main(data_dir=DATA_DIR, write=True):
+    DATA_DIR = data_dir
     logon = pd.read_csv(f"{DATA_DIR}/logon.csv", parse_dates=["timestamp"])
     device = pd.read_csv(f"{DATA_DIR}/device.csv", parse_dates=["timestamp"])
     http = pd.read_csv(f"{DATA_DIR}/http.csv", parse_dates=["timestamp"])
@@ -176,11 +187,11 @@ def main():
     )
 
     # This is the label-free table Day 4 models will actually train on.
-    features.to_csv(f"{DATA_DIR}/user_features.csv", index=False)
-
-    # Preview-only copy with labels attached, for our own inspection.
     preview = features.merge(labels, on="user_id", how="left")
-    preview.to_csv(f"{DATA_DIR}/user_features_preview_with_labels.csv", index=False)
+    if write:
+        features.to_csv(f"{DATA_DIR}/user_features.csv", index=False)
+        # Preview-only copy with labels attached, for our own inspection.
+        preview.to_csv(f"{DATA_DIR}/user_features_preview_with_labels.csv", index=False)
 
     print(f"Engineered {features.shape[1]-1} features for {features.shape[0]} users.")
     print(f"Feature columns: {[c for c in features.columns if c != 'user_id']}")

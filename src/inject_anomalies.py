@@ -36,13 +36,13 @@ NUM_MALICIOUS_USERS = 6
 DATA_DIR = "data/processed/full"
 
 
-def load_logs():
-    users = pd.read_csv(f"{DATA_DIR}/users.csv")
-    logon = pd.read_csv(f"{DATA_DIR}/logon.csv", parse_dates=["timestamp"])
-    device = pd.read_csv(f"{DATA_DIR}/device.csv", parse_dates=["timestamp"])
-    http = pd.read_csv(f"{DATA_DIR}/http.csv", parse_dates=["timestamp"])
-    email = pd.read_csv(f"{DATA_DIR}/email.csv", parse_dates=["timestamp"])
-    file_df = pd.read_csv(f"{DATA_DIR}/file.csv", parse_dates=["timestamp"])
+def load_logs(data_dir=DATA_DIR):
+    users = pd.read_csv(f"{data_dir}/users.csv")
+    logon = pd.read_csv(f"{data_dir}/logon.csv", parse_dates=["timestamp"])
+    device = pd.read_csv(f"{data_dir}/device.csv", parse_dates=["timestamp"])
+    http = pd.read_csv(f"{data_dir}/http.csv", parse_dates=["timestamp"])
+    email = pd.read_csv(f"{data_dir}/email.csv", parse_dates=["timestamp"])
+    file_df = pd.read_csv(f"{data_dir}/file.csv", parse_dates=["timestamp"])
     return users, logon, device, http, email, file_df
 
 
@@ -121,10 +121,12 @@ def inject_privilege_probe(file_df, user_id, pc, day, foreign_dept):
     return pd.concat([file_df, pd.DataFrame(rows)], ignore_index=True)
 
 
-def main():
-    users, logon, device, http, email, file_df = load_logs()
+def main(data_dir=DATA_DIR, seed=7, n_malicious=NUM_MALICIOUS_USERS):
+    random.seed(seed)
+    np.random.seed(seed)
+    users, logon, device, http, email, file_df = load_logs(data_dir)
 
-    malicious_users = users.sample(n=NUM_MALICIOUS_USERS, random_state=7)
+    malicious_users = users.sample(n=n_malicious, random_state=seed)
     dates = pd.to_datetime(logon["timestamp"]).dt.normalize().unique()
     dates = pd.Series(dates).sort_values().tolist()
 
@@ -159,16 +161,16 @@ def main():
     all_labels = users[["user_id"]].copy().merge(labels_df, on="user_id", how="left")
     all_labels["is_malicious"] = all_labels["is_malicious"].apply(lambda v: bool(v) if pd.notna(v) else False)
 
-    logon.sort_values("timestamp").to_csv(f"{DATA_DIR}/logon.csv", index=False)
-    device.sort_values("timestamp").to_csv(f"{DATA_DIR}/device.csv", index=False)
-    email.sort_values("timestamp").to_csv(f"{DATA_DIR}/email.csv", index=False)
-    file_df.sort_values("timestamp").to_csv(f"{DATA_DIR}/file.csv", index=False)
-    all_labels.to_csv(f"{DATA_DIR}/labels.csv", index=False)
+    logon.sort_values("timestamp").to_csv(f"{data_dir}/logon.csv", index=False)
+    device.sort_values("timestamp").to_csv(f"{data_dir}/device.csv", index=False)
+    email.sort_values("timestamp").to_csv(f"{data_dir}/email.csv", index=False)
+    file_df.sort_values("timestamp").to_csv(f"{data_dir}/file.csv", index=False)
+    all_labels.to_csv(f"{data_dir}/labels.csv", index=False)
 
     print(f"Injected {len(labels)} red-team insider scenarios:")
     for l in labels:
         print(f"  {l['user_id']}: {l['scenario']} on {l['injected_day']}")
-    print(f"Ground truth written to {DATA_DIR}/labels.csv")
+    print(f"Ground truth written to {data_dir}/labels.csv")
 
 
 if __name__ == "__main__":

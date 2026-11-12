@@ -6,7 +6,9 @@ shap
 lime
 networkx
 pyvis
-streamlit
+streamlit>=1.67
 matplotlib
 seaborn
 faker
+tabulate
+pytest
