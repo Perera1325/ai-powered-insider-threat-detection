@@ -34,6 +34,7 @@ from pyvis_graph import build_pyvis_html
 from realtime.scorer import RealTimeScorer, risk_from_scores
 from inject_anomalies import SCENARIOS
 import ui_theme
+import charts
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
@@ -262,9 +263,7 @@ with tab_rt:
         hist = scorer.history_df()
         top = state["risk_table"].user_id.head(4).tolist()
         cols = list(dict.fromkeys(top + ([rt_user] if rt_user in hist.columns else [])))
-        chart = hist[cols].copy()
-        chart["alert threshold"] = 70
-        st.line_chart(chart, height=280)
+        st.altair_chart(charts.risk_timeseries(hist[cols], rt_user, alerts), width="stretch")
         st.dataframe(state["risk_table"].head(8).rename(columns={"user_id": "User", "anomaly_score": "Raw score", "risk_score": "Risk (0-100)"}),
                      width="stretch", hide_index=True)
         for a in reversed(alerts[-5:]):
@@ -319,8 +318,7 @@ with tab_live:
                 m2.metric(f"{demo_user_id} risk score", f"{demo_row.risk_score:.1f}/100")
                 m3.metric("Status", "ATTACK INJECTED" if state["injected"] else "monitoring...")
 
-            fig = ld.plot_risk_history(history, demo_user_id, inject_at_tick)
-            chart_placeholder.pyplot(fig)
+            chart_placeholder.altair_chart(charts.live_risk_chart(history, demo_user_id, inject_at_tick), width="stretch")
 
             table_placeholder.dataframe(
                 state["risk_table"].head(8).rename(
@@ -349,7 +347,7 @@ with tab_graph:
     st.subheader("Interactive user-resource interaction graph (PyVis)")
     st.caption(
         "Node colour = risk score from the selected model (green = low, red = high); "
-        "white outline = ground-truth insider (demo dataset only); squares = shared resources; "
+        "dark outline = ground-truth insider (demo dataset only); squares = shared resources; "
         "node size = degree. Drag, zoom and hover for details."
     )
     min_links = st.slider("Minimum emails between two users to draw a link", 1, 15, 7,

@@ -65,11 +65,11 @@ def build_pyvis_html(G, risk_by_user=None, labels=None, focus_user=None, height=
                 if d.get("edge_type") == "email" and d.get("weight", 1) < min_edge_weight]
         H.remove_edges_from(weak)
 
-    net = Network(height=height, width="100%", bgcolor="#0B1220", font_color="#E6EDF7", cdn_resources="in_line")
+    net = Network(height=height, width="100%", bgcolor="#FFFFFF", font_color="#1B2433", cdn_resources="in_line")
     for n, d in H.nodes(data=True):
         if d.get("node_type") == "resource":
             net.add_node(n, label=n.replace("folder:", ""), shape="box", color="#f2b134", mass=8,
-                         font={"size": 18, "color": "#0B1220"}, title=f"Shared resource: {n}")
+                         font={"size": 18, "color": "#1B2433"}, title=f"Shared resource: {n}")
             continue
         risk = float(risk_by_user.get(n, 0.0))
         info = label_map.get(n, {})
@@ -77,15 +77,15 @@ def build_pyvis_html(G, risk_by_user=None, labels=None, focus_user=None, height=
         if info.get("is_malicious"):
             tip += f" | GROUND TRUTH: {info.get('scenario')}"
         size = 8 + 0.25 * H.degree(n)
-        border = "#FFFFFF" if info.get("is_malicious") or n == focus_user else _risk_colour(risk)
-        show_label = bool(focus_user) or risk >= label_risk or border == "#FFFFFF"
+        border = "#111827" if info.get("is_malicious") or n == focus_user else _risk_colour(risk)
+        show_label = bool(focus_user) or risk >= label_risk or border == "#111827"
         net.add_node(n, label=n if show_label else " ", color={"background": _risk_colour(risk), "border": border},
-                     borderWidth=3 if border == "#FFFFFF" else 1, size=size, title=tip,
-                     font={"size": 16, "color": "#E6EDF7", "strokeWidth": 3, "strokeColor": "#0B1220"})
+                     borderWidth=3 if border == "#111827" else 1, size=size, title=tip,
+                     font={"size": 16, "color": "#1B2433", "strokeWidth": 3, "strokeColor": "#FFFFFF"})
     for u, v, d in H.edges(data=True):
         is_file = d.get("edge_type") == "file_access"
         net.add_edge(u, v, width=0.4 if is_file else min(1 + float(d.get("weight", 1)) / 6, 4),
-                     color="#e3e3e3" if is_file else "#9aa5b1",
+                     color="#D5DBE5" if is_file else "#9AA8BC",
                      title=f"{d.get('edge_type', '')} (weight {d.get('weight', 1)})")
     net.barnes_hut(gravity=-9000, central_gravity=0.15, spring_length=230, spring_strength=0.02,
                    damping=0.5, overlap=0.6)

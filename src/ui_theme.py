@@ -6,9 +6,9 @@ no user-supplied text is ever interpolated into HTML.
 import matplotlib as mpl
 
 PALETTE = {
-    "bg": "#0B1220", "panel": "#111A2B", "panel2": "#162238", "border": "#22304A",
-    "text": "#E6EDF7", "muted": "#8B9BB4", "accent": "#3B82F6",
-    "high": "#EF4444", "medium": "#F59E0B", "low": "#22C55E",
+    "bg": "#F4F6FA", "panel": "#FFFFFF", "panel2": "#EEF2F8", "border": "#DCE3EE",
+    "text": "#1B2433", "muted": "#5B6B82", "accent": "#2563EB",
+    "high": "#DC2626", "medium": "#D97706", "low": "#16A34A",
 }
 
 CSS = f"""
@@ -17,25 +17,26 @@ CSS = f"""
         --border:{PALETTE['border']}; --muted:{PALETTE['muted']}; --accent:{PALETTE['accent']}; }}
 #MainMenu, footer, [data-testid="stToolbar"] {{ visibility:hidden; }}
 .block-container {{ padding-top:3.2rem; padding-bottom:3rem; max-width:1500px; }}
+html, body {{ background:var(--bg); }}
 html, body, [class*="css"] {{ font-feature-settings:"tnum" 1; letter-spacing:0.01em; }}
 
 /* page title */
 h1 {{ font-size:1.55rem !important; font-weight:650 !important; letter-spacing:0.02em !important;
       padding:0 0 .15rem 0 !important; }}
 h2, h3 {{ font-weight:600 !important; letter-spacing:0.02em; }}
-h3 {{ font-size:1.02rem !important; text-transform:uppercase; color:#B8C5DC; margin-top:1.2rem !important;
+h3 {{ font-size:1.02rem !important; text-transform:uppercase; color:#3A4A63; margin-top:1.2rem !important;
       border-left:3px solid var(--accent); padding:.15rem 0 .15rem .7rem; }}
 
 /* status strip */
 .soc-strip {{ display:flex; gap:1.4rem; align-items:center; flex-wrap:wrap; margin:.1rem 0 1.1rem 0;
              padding:.55rem .9rem; background:var(--panel); border:1px solid var(--border); border-radius:6px;
              font-size:.8rem; color:var(--muted); }}
-.soc-strip b {{ color:#E6EDF7; font-weight:600; }}
+.soc-strip b {{ color:#1B2433; font-weight:600; }}
 .dot {{ display:inline-block; width:8px; height:8px; border-radius:50%; background:{PALETTE['low']};
-       margin-right:.4rem; box-shadow:0 0 6px {PALETTE['low']}; }}
+       margin-right:.4rem; box-shadow:0 0 5px {PALETTE['low']}; }}
 
 /* KPI cards */
-[data-testid="stMetric"] {{ background:var(--panel); border:1px solid var(--border);
+[data-testid="stMetric"] {{ box-shadow:0 1px 2px rgba(16,24,40,.06); background:var(--panel); border:1px solid var(--border);
     border-top:2px solid var(--accent); border-radius:6px; padding:.8rem 1rem; }}
 [data-testid="stMetricLabel"] p {{ font-size:.72rem !important; text-transform:uppercase;
     letter-spacing:.08em; color:var(--muted) !important; }}
@@ -46,12 +47,12 @@ h3 {{ font-size:1.02rem !important; text-transform:uppercase; color:#B8C5DC; mar
 .stTabs [data-baseweb="tab-list"] {{ gap:.2rem; border-bottom:1px solid var(--border); }}
 .stTabs [data-baseweb="tab"] {{ height:2.6rem; padding:0 1.1rem; font-size:.86rem; font-weight:550;
     letter-spacing:.04em; text-transform:uppercase; color:var(--muted); }}
-.stTabs [aria-selected="true"] {{ color:#E6EDF7 !important; }}
+.stTabs [aria-selected="true"] {{ color:#1B2433 !important; }}
 
 /* sidebar */
-[data-testid="stSidebar"] {{ background:#0D1626; border-right:1px solid var(--border); }}
+[data-testid="stSidebar"] {{ background:#FFFFFF; border-right:1px solid var(--border); }}
 .brand {{ display:flex; align-items:center; gap:.6rem; margin:.2rem 0 1rem 0; }}
-.brand .logo {{ width:30px; height:30px; border-radius:6px; background:linear-gradient(135deg,#3B82F6,#1D4ED8);
+.brand .logo {{ width:30px; height:30px; border-radius:6px; background:linear-gradient(135deg,#2563EB,#1E40AF);
     display:flex; align-items:center; justify-content:center; font-weight:700; font-size:.8rem; color:white; }}
 .brand .name {{ font-weight:650; font-size:.95rem; line-height:1.1; }}
 .brand .sub {{ font-size:.68rem; color:var(--muted); text-transform:uppercase; letter-spacing:.1em; }}
@@ -60,9 +61,9 @@ h3 {{ font-size:1.02rem !important; text-transform:uppercase; color:#B8C5DC; mar
 /* severity chips */
 .chip {{ display:inline-block; padding:.05rem .55rem; border-radius:3px; font-size:.72rem; font-weight:650;
         letter-spacing:.06em; text-transform:uppercase; }}
-.chip.High {{ background:rgba(239,68,68,.16); color:#F87171; border:1px solid rgba(239,68,68,.45); }}
-.chip.Medium {{ background:rgba(245,158,11,.14); color:#FBBF24; border:1px solid rgba(245,158,11,.45); }}
-.chip.Low {{ background:rgba(34,197,94,.12); color:#4ADE80; border:1px solid rgba(34,197,94,.4); }}
+.chip.High {{ background:#FEE2E2; color:#B91C1C; border:1px solid #FCA5A5; }}
+.chip.Medium {{ background:#FEF3C7; color:#92400E; border:1px solid #FCD34D; }}
+.chip.Low {{ background:#DCFCE7; color:#166534; border:1px solid #86EFAC; }}
 
 /* buttons, alerts, tables */
 .stButton > button {{ border-radius:5px; font-weight:600; letter-spacing:.03em; border:1px solid var(--border); }}
@@ -95,10 +96,10 @@ def status_strip(n_users, model_name, n_alerts_high, data_note="Synthetic datase
 
 def style_risk_table(df):
     """pandas Styler colouring the Risk level column; used by st.dataframe."""
-    colours = {"High": "#F87171", "Medium": "#FBBF24", "Low": "#4ADE80"}
+    colours = {"High": "#B91C1C", "Medium": "#B45309", "Low": "#15803D"}
 
     def _c(v):
-        return f"color:{colours.get(v, '#E6EDF7')};font-weight:650"
+        return f"color:{colours.get(v, '#1B2433')};font-weight:650"
 
     return df.style.map(_c, subset=["risk_level"])
 
@@ -107,7 +108,7 @@ def apply_matplotlib_theme():
     mpl.rcParams.update({
         "figure.facecolor": PALETTE["panel"], "axes.facecolor": PALETTE["panel"],
         "savefig.facecolor": PALETTE["panel"], "axes.edgecolor": PALETTE["border"],
-        "axes.labelcolor": "#B8C5DC", "text.color": PALETTE["text"],
+        "axes.labelcolor": "#3A4A63", "text.color": PALETTE["text"],
         "xtick.color": PALETTE["muted"], "ytick.color": PALETTE["muted"],
         "grid.color": PALETTE["border"], "axes.titleweight": "bold", "axes.titlesize": 10,
         "axes.spines.top": False, "axes.spines.right": False, "font.size": 9,

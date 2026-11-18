@@ -190,31 +190,41 @@ def build_full_graph(data):
     return build_graph(data["file_df"], data["email_df"], data["users"])
 
 
-def subgraph_figure(G, uid, radius=1):
+def subgraph_figure(G, uid, radius=1, top_contacts=12):
+    """Clean 'ego' view: the user in the centre, shared folders on an inner ring and the
+    strongest email contacts on an outer ring (readable, unlike the full neighbourhood)."""
     if uid not in G:
         return None
-    nodes = {uid}
-    frontier = {uid}
-    for _ in range(radius):
-        next_frontier = set()
-        for n in frontier:
-            next_frontier |= set(G.neighbors(n))
-        nodes |= next_frontier
-        frontier = next_frontier
-    sub = G.subgraph(nodes)
+    import math
 
-    fig, ax = plt.subplots(figsize=(6, 6))
-    pos = nx.spring_layout(sub, seed=42)
-    resource_nodes = [n for n, d in sub.nodes(data=True) if d.get("node_type") == "resource"]
-    user_nodes = [n for n in sub.nodes if n not in resource_nodes]
-    colors = ["#d94a4a" if n == uid else "#4a90d9" for n in user_nodes]
+    resources = [n for n in G.neighbors(uid) if G.nodes[n].get("node_type") == "resource"]
+    people = [(n, G[uid][n].get("weight", 1)) for n in G.neighbors(uid) if n not in resources]
+    people = [n for n, _ in sorted(people, key=lambda t: -t[1])[:top_contacts]]
 
-    nx.draw_networkx_edges(sub, pos, alpha=0.3, ax=ax)
-    nx.draw_networkx_nodes(sub, pos, nodelist=resource_nodes, node_color="#f2b134", node_shape="s", node_size=500, ax=ax)
-    nx.draw_networkx_nodes(sub, pos, nodelist=user_nodes, node_color=colors, node_size=200, ax=ax)
-    labels_map = {n: n.replace("folder:", "") if str(n).startswith("folder:") else n for n in sub.nodes}
-    nx.draw_networkx_labels(sub, pos, labels=labels_map, font_size=8, ax=ax)
-    ax.set_title(f"Neighbourhood of {uid} (radius={radius})")
+    fig, ax = plt.subplots(figsize=(7, 6))
+    pos = {uid: (0.0, 0.0)}
+    for i, n in enumerate(resources):
+        a = 2 * math.pi * i / max(len(resources), 1) + math.pi / 6
+        pos[n] = (0.45 * math.cos(a), 0.45 * math.sin(a))
+    for i, n in enumerate(people):
+        a = 2 * math.pi * i / max(len(people), 1)
+        pos[n] = (math.cos(a), math.sin(a))
+    for n in resources + people:
+        w = G[uid][n].get("weight", 1)
+        ax.plot([0, pos[n][0]], [0, pos[n][1]], color="#B6C2D4", lw=0.8 + min(float(w), 20) / 6, zorder=1, alpha=0.9)
+    ax.scatter([pos[n][0] for n in resources], [pos[n][1] for n in resources], s=900, marker="s",
+               color="#F59E0B", edgecolor="white", zorder=3)
+    for n in resources:
+        ax.text(*pos[n], str(n).replace("folder:", ""), ha="center", va="center", fontsize=8, color="#1B2433", zorder=4)
+    ax.scatter([pos[n][0] for n in people], [pos[n][1] for n in people], s=420, color="#2563EB",
+               edgecolor="white", zorder=3)
+    for n in people:
+        x, y = pos[n]
+        ax.text(x * 1.16, y * 1.16, n, ha="center", va="center", fontsize=8.5, color="#1B2433")
+    ax.scatter([0], [0], s=1100, color="#DC2626", edgecolor="white", linewidth=2, zorder=5)
+    ax.text(0, -0.17, uid, ha="center", va="center", fontsize=10, fontweight="bold", color="#1B2433", zorder=6)
+    ax.set_xlim(-1.4, 1.4); ax.set_ylim(-1.3, 1.3)
+    ax.set_title(f"{uid}: shared folders (inner ring) and {len(people)} strongest email contacts")
     ax.axis("off")
     plt.tight_layout()
     return fig
