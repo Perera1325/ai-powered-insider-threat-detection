@@ -33,10 +33,13 @@ import live_demo as ld
 from pyvis_graph import build_pyvis_html
 from realtime.scorer import RealTimeScorer, risk_from_scores
 from inject_anomalies import SCENARIOS
+import ui_theme
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
-st.set_page_config(page_title="Insider Threat Detection - SOC Dashboard", layout="wide")
+st.set_page_config(page_title="Insider Threat Detection | SOC Console", page_icon="🛡️", layout="wide")
+st.markdown(ui_theme.CSS, unsafe_allow_html=True)
+ui_theme.apply_matplotlib_theme()
 
 
 @st.cache_data
@@ -88,42 +91,63 @@ models = _trained_models(X)
 user_ids = data["features"].user_id.values
 
 st.title("AI-Powered Insider Threat Detection")
-st.caption(
-    "Simulated organizational environment - all users, logs, and incidents are "
-    "synthetically generated for this final year project. No real data is used."
-)
 
 with st.sidebar:
-    st.header("Controls")
+    st.markdown(
+        '<div class="brand"><div class="logo">IT</div><div><div class="name">Insider Threat</div>'
+        '<div class="sub">Detection console</div></div></div>',
+        unsafe_allow_html=True,
+    )
+    st.subheader("Detection settings")
     model_name = st.selectbox("Detection model", du.MODEL_CHOICES, index=0)
     top_k = st.slider("Number of alerts to show", min_value=5, max_value=30, value=15)
     st.divider()
+    st.markdown("**Severity scale**")
+    st.markdown(
+        '<div class="legend">'
+        + ui_theme.severity_chip("High") + " &ge; 70 &nbsp; "
+        + ui_theme.severity_chip("Medium") + " 40-69 &nbsp; "
+        + ui_theme.severity_chip("Low") + " &lt; 40</div>",
+        unsafe_allow_html=True,
+    )
+    st.divider()
     st.caption(
-        "`is_malicious` / `scenario` columns show the ground-truth label "
-        "injected during dataset generation (Day 1) - shown here only "
-        "because this is a research/demo dataset with known answers. A "
-        "real deployment would not have this column; it exists to let "
-        "you validate the model against a known answer key."
+        "Ground-truth columns (`is_malicious`, `scenario`) come from the synthetic dataset's answer key "
+        "and exist only to validate the models. A production deployment would not have them."
     )
 
 tab_alerts, tab_rt, tab_live, tab_graph, tab_models = st.tabs(
-    ["🚨 Alerts", "⚡ Real-Time", "🔴 Live Demo", "🕸️ Interaction Graph", "📊 Model Comparison"]
+    ["Alert queue", "Real-time monitor", "Attack simulation", "Entity graph", "Model evaluation"]
 )
 
 with tab_alerts:
     alert_df = _alert_table(model_name, top_k, data["features"], data["labels"], models, X)
+    st.markdown(
+        ui_theme.status_strip(len(data["features"]), model_name, int((alert_df.risk_level == "High").sum())),
+        unsafe_allow_html=True,
+    )
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Users monitored", len(data["features"]))
     col2.metric("Alerts shown", len(alert_df))
     col3.metric("High risk", int((alert_df.risk_level == "High").sum()))
-    col4.metric("Flagged = ground truth match", int(alert_df.is_malicious.sum()))
+    col4.metric("Confirmed insiders in queue", int(alert_df.is_malicious.sum()))
 
     st.subheader(f"Top {top_k} alerts - {model_name}")
     st.dataframe(
-        alert_df[["rank", "user_id", "risk_score", "risk_level", "is_malicious", "scenario"]],
+        ui_theme.style_risk_table(
+            alert_df[["rank", "user_id", "risk_score", "risk_level", "is_malicious", "scenario"]]
+        ),
         width="stretch",
         hide_index=True,
+        column_config={
+            "rank": st.column_config.NumberColumn("Rank", width="small"),
+            "user_id": st.column_config.TextColumn("Entity"),
+            "risk_score": st.column_config.ProgressColumn("Risk score", min_value=0, max_value=100, format="%.1f"),
+            "risk_level": st.column_config.TextColumn("Severity", width="small"),
+            "is_malicious": st.column_config.CheckboxColumn("Ground truth: insider", width="small"),
+            "scenario": st.column_config.TextColumn("Injected scenario"),
+        },
     )
 
     st.subheader("Explain an alert")
@@ -134,7 +158,7 @@ with tab_alerts:
         c1, c2, c3 = st.columns(3)
         c1.metric("Risk score", f"{row.risk_score:.1f}/100")
         c2.metric("Risk level", row.risk_level)
-        c3.metric("Ground-truth label", "Malicious" if row.is_malicious else "Normal")
+        c3.metric("Ground truth", "Malicious" if row.is_malicious else "Normal")
 
         with st.spinner("Computing SHAP / LIME explanation..."):
             shap_s, lime_s = _explain(model_name, selected_uid, models, X, feature_cols, user_ids)
@@ -194,9 +218,9 @@ with tab_rt:
     rt_scen = r2.selectbox("Attack scenario", SCENARIOS, index=1, key="rt_scen")
     rt_interval = r3.slider("Seconds per simulated day", 0.5, 5.0, 1.5, 0.5, key="rt_interval")
     b1, b2, b3 = st.columns(3)
-    if b1.button("▶ Start stream", type="primary", key="rt_start"):
+    if b1.button("Start stream", type="primary", key="rt_start"):
         _start_stream(rt_interval)
-    if b2.button("💥 Inject attack now", key="rt_inject"):
+    if b2.button("Inject attack now", key="rt_inject"):
         rt = st.session_state.get("rt")
         if rt and not rt["done"]:
             with open(os.path.join(rt["dir"], "control.json"), "w", encoding="utf-8") as f:
@@ -204,7 +228,7 @@ with tab_rt:
             st.toast(f"Attack `{rt_scen}` will be injected for {rt_user} on the next simulated day")
         else:
             st.warning("Start the stream first.")
-    if b3.button("⏹ Stop", key="rt_stop"):
+    if b3.button("Stop", key="rt_stop"):
         _stop_stream()
         if st.session_state.get("rt"):
             st.session_state["rt"]["done"] = True
@@ -233,7 +257,7 @@ with tab_rt:
         m2.metric("Simulated date", str(state["sim_date"]))
         m3.metric("Events ingested", f"{scorer.n_events:,}")
         m4.metric("Last alert latency", f"{alerts[-1]['latency_s']:.2f} s" if alerts else "-")
-        st.caption(f"Status: {'🟢 streaming' if not rt['done'] else '⚪ stream ended'} - model: {rt['model']}")
+        st.caption(f"Status: {'STREAMING' if not rt['done'] else 'STREAM ENDED'} - model: {rt['model']}")
 
         hist = scorer.history_df()
         top = state["risk_table"].user_id.head(4).tolist()
@@ -245,7 +269,7 @@ with tab_rt:
                      width="stretch", hide_index=True)
         for a in reversed(alerts[-5:]):
             tag = "matches the injected attack" if a["user_id"] in truth_users else "NOT an injected attack (false alarm)"
-            st.error(f"🚨 ALERT: {a['user_id']} risk {a['risk_score']:.0f}/100 on simulated day {a['sim_date']} "
+            st.error(f"ALERT: {a['user_id']} risk {a['risk_score']:.0f}/100 on simulated day {a['sim_date']} "
                      f"(tick {a['tick']}), raised {a['latency_s']:.2f}s after the logs were written - {tag}")
 
     st.fragment(run_every=1.0 if rt_running else None)(_rt_panel)()
@@ -269,7 +293,7 @@ with tab_live:
     inject_at_tick = lc4.slider("Inject attack on day", min_value=2, max_value=n_ticks, value=min(6, n_ticks))
     speed = st.slider("Seconds per simulated day (demo pacing)", min_value=0.2, max_value=3.0, value=1.0, step=0.2)
 
-    start = st.button("▶ Start Live Feed", type="primary")
+    start = st.button("Start Live Feed", type="primary")
 
     if start:
         live_model = models[model_name]
@@ -293,7 +317,7 @@ with tab_live:
                 m1, m2, m3 = st.columns(3)
                 m1.metric("Simulated day", f"{state['tick']} / {n_ticks}")
                 m2.metric(f"{demo_user_id} risk score", f"{demo_row.risk_score:.1f}/100")
-                m3.metric("Status", "🔴 ATTACK INJECTED" if state["injected"] else "monitoring...")
+                m3.metric("Status", "ATTACK INJECTED" if state["injected"] else "monitoring...")
 
             fig = ld.plot_risk_history(history, demo_user_id, inject_at_tick)
             chart_placeholder.pyplot(fig)
@@ -308,7 +332,7 @@ with tab_live:
 
             if state["injected"] or (state["tick"] > inject_at_tick and demo_row.risk_score >= 70):
                 alert_placeholder.error(
-                    f"🚨 ALERT: {demo_user_id} flagged HIGH RISK on simulated day {state['tick']} "
+                    f"ALERT: {demo_user_id} flagged HIGH RISK on simulated day {state['tick']} "
                     f"(risk score {demo_row.risk_score:.1f}/100) - injected scenario: `{scenario}`"
                 )
 
@@ -325,7 +349,7 @@ with tab_graph:
     st.subheader("Interactive user-resource interaction graph (PyVis)")
     st.caption(
         "Node colour = risk score from the selected model (green = low, red = high); "
-        "black outline = ground-truth insider (demo dataset only); squares = shared resources; "
+        "white outline = ground-truth insider (demo dataset only); squares = shared resources; "
         "node size = degree. Drag, zoom and hover for details."
     )
     min_links = st.slider("Minimum emails between two users to draw a link", 1, 15, 7,

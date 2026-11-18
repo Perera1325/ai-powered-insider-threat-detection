@@ -100,8 +100,9 @@ class KerasAutoencoder:
 
 
 def tensorflow_available():
+    # find_spec avoids importing TensorFlow (hundreds of MB of RAM) just to check availability
+    import importlib.util
     try:
-        import tensorflow  # noqa: F401
-        return True
+        return importlib.util.find_spec("tensorflow") is not None
     except Exception:
         return False

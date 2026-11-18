@@ -17,6 +17,7 @@ def _toy():
 def test_keras_autoencoder_flags_off_manifold_points():
     # autoencoders detect points that break the learned structure (normal data lives on a
     # 2-D subspace of 8-D space; the outliers do not), not merely "far away" points
+    pytest.importorskip("tensorflow")
     rng = np.random.RandomState(1)
     Z = rng.normal(size=(150, 2))
     X = Z @ rng.normal(size=(2, 8)) + 0.05 * rng.normal(size=(150, 8))

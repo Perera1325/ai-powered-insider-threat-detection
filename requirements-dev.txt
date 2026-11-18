@@ -1,0 +1,4 @@
+# Full local / CI environment: runtime + Keras autoencoder + test runner.
+-r requirements.txt
+tensorflow-cpu
+pytest
