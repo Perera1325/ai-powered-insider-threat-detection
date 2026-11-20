@@ -108,3 +108,73 @@ def latency_chart(stats):
                     tooltip=["tick", "latency_s", "score_ms", "events"]))
     rule = alt.Chart(pd.DataFrame({"y": [5]})).mark_rule(color="#DC2626", strokeDash=[5, 4]).encode(y="y:Q")
     return _base_config((line + rule).properties(height=170, title="Pipeline latency per tick (target < 5 s)"))
+
+
+BLUE, NAVY_C, RED_C = "#2563EB", "#1E3A8A", "#DC2626"
+
+
+def threshold_chart(sweep, current):
+    """Precision / recall / F1 against the alert threshold, with the chosen threshold marked."""
+    long = sweep.melt(id_vars="threshold", value_vars=["precision", "recall", "f1"], var_name="metric", value_name="value")
+    lines = (alt.Chart(long).mark_line(strokeWidth=2.2, interpolate="monotone")
+             .encode(x=alt.X("threshold:Q", title="Alert threshold (risk 0-100)", scale=alt.Scale(domain=[0, 100])),
+                     y=alt.Y("value:Q", title=None, scale=alt.Scale(domain=[0, 1.02])),
+                     color=alt.Color("metric:N", scale=alt.Scale(domain=["precision", "recall", "f1"],
+                                                                 range=["#93C5FD", BLUE, NAVY_C]), legend=alt.Legend(title=None)),
+                     tooltip=["metric", "threshold", alt.Tooltip("value:Q", format=".2f")]))
+    rule = alt.Chart(pd.DataFrame({"x": [current]})).mark_rule(color=RED_C, strokeDash=[5, 4], size=1.4).encode(x="x:Q")
+    return _base_config((lines + rule).properties(height=260, title="Precision / recall vs alert threshold"))
+
+
+def alert_volume_chart(sweep, current):
+    """Stacked true / false positives per threshold: the analyst workload view."""
+    long = sweep.melt(id_vars="threshold", value_vars=["true_positives", "false_positives"], var_name="kind", value_name="users")
+    long["kind"] = long.kind.map({"true_positives": "Real insiders flagged", "false_positives": "False alarms"})
+    area = (alt.Chart(long).mark_area(opacity=.9, interpolate="step-after")
+            .encode(x=alt.X("threshold:Q", title="Alert threshold (risk 0-100)", scale=alt.Scale(domain=[0, 100])),
+                    y=alt.Y("users:Q", title="Users alerted", stack=True),
+                    color=alt.Color("kind:N", scale=alt.Scale(domain=["Real insiders flagged", "False alarms"],
+                                                              range=[NAVY_C, "#BFDBFE"]), legend=alt.Legend(title=None)),
+                    tooltip=["kind", "threshold", "users"]))
+    rule = alt.Chart(pd.DataFrame({"x": [current]})).mark_rule(color=RED_C, strokeDash=[5, 4], size=1.4).encode(x="x:Q")
+    return _base_config((area + rule).properties(height=260, title="Analyst workload at each threshold"))
+
+
+def agreement_heatmap(ov):
+    long = ov.reset_index(names="a").melt(id_vars="a", var_name="b", value_name="overlap")
+    base = alt.Chart(long).encode(x=alt.X("b:N", title=None, axis=alt.Axis(labelAngle=-40, labelLimit=200, labelOverlap=False)),
+                                  y=alt.Y("a:N", title=None, axis=alt.Axis(labelLimit=200, labelOverlap=False)))
+    rect = base.mark_rect().encode(color=alt.Color("overlap:Q", scale=alt.Scale(domain=[0, 1], range=["#EFF6FF", "#60A5FA", NAVY_C]),
+                                                    legend=None), tooltip=["a", "b", alt.Tooltip("overlap:Q", format=".2f")])
+    txt = base.mark_text(fontSize=12).encode(text=alt.Text("overlap:Q", format=".2f"),
+                                              color=alt.condition(alt.datum.overlap > .55, alt.value("white"), alt.value("#1B2433")))
+    return _base_config((rect + txt).properties(height=alt.Step(36), title="Top-k overlap between models (Jaccard)"))
+
+
+def deviation_chart(dev):
+    d = dev.copy()
+    d["direction"] = ["Above population" if z >= 0 else "Below population" for z in d.z_score]
+    return _base_config(
+        alt.Chart(d).mark_bar(size=15)
+        .encode(y=alt.Y("feature:N", sort=d.feature.tolist(), title=None, axis=alt.Axis(labelLimit=240, labelOverlap=False)),
+                x=alt.X("z_score:Q", title="Standard deviations from the population mean"),
+                color=alt.Color("direction:N", scale=alt.Scale(domain=["Above population", "Below population"], range=[NAVY_C, "#93C5FD"]),
+                                legend=alt.Legend(title=None)),
+                tooltip=["feature", alt.Tooltip("value:Q", format=".2f"), alt.Tooltip("population_mean:Q", format=".2f"),
+                         alt.Tooltip("z_score:Q", format=".1f")])
+        .properties(height=alt.Step(24), title="Most unusual behaviours (z-score)"))
+
+
+def timeline_chart(long, injected_day=None):
+    """injected_day: ground-truth attack date (demo data only) drawn as a red rule."""
+    if long.empty:
+        return None
+    pal = alt.Scale(domain=["File events", "E-mails sent", "External e-mails"], range=["#93C5FD", BLUE, NAVY_C])
+    ch = (alt.Chart(long).mark_line(strokeWidth=1.8, interpolate="monotone")
+          .encode(x=alt.X("date:T", title=None), y=alt.Y("count:Q", title="Events per day"),
+                  color=alt.Color("series:N", scale=pal, legend=alt.Legend(title=None)),
+                  tooltip=["series", alt.Tooltip("date:T", format="%d %b"), "count"]))
+    if injected_day is not None and pd.notna(injected_day):
+        ds = pd.DataFrame({"date": [pd.Timestamp(injected_day)]})
+        ch = ch + alt.Chart(ds).mark_rule(color=RED_C, strokeDash=[4, 4]).encode(x="date:T")
+    return _base_config(ch.properties(height=230, title="Daily activity timeline"))

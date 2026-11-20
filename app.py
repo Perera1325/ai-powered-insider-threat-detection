@@ -32,6 +32,7 @@ import dashboard_utils as du
 import live_demo as ld
 import network_view as nv
 import upload_analysis as ua
+import soc_tools as soc
 from realtime.scorer import RealTimeScorer, risk_from_scores
 from inject_anomalies import SCENARIOS
 import ui_theme
@@ -118,8 +119,34 @@ with st.sidebar:
         "and exist only to validate the models. A production deployment would not have them."
     )
 
-tab_alerts, tab_rt, tab_live, tab_graph, tab_models, tab_upload = st.tabs(
-    ["Alert queue", "Real-time monitor", "Attack simulation", "Entity graph", "Model evaluation", "Upload & analyse"]
+
+st.session_state.setdefault("cases", soc.new_case_store())
+
+
+def _case_panel(uid, key):
+    """Status + analyst note for one entity; every save is appended to an audit trail."""
+    store = st.session_state["cases"]
+    cur = soc.case_status(store, uid)
+    st.markdown(f"**Case for {uid}** &nbsp; current status: `{cur}`")
+    c1, c2 = st.columns([1, 2])
+    new_status = c1.selectbox("Status", soc.STATUSES, index=soc.STATUSES.index(cur), key=f"{key}_status_{uid}")
+    note = c2.text_input("Analyst note", key=f"{key}_note_{uid}", placeholder="What did you check? What is the outcome?")
+    if st.button("Save case update", key=f"{key}_save_{uid}"):
+        soc.update_case(store, uid, new_status, note)
+        st.toast(f"{uid}: {new_status}")
+        st.rerun()
+    hist = store.get(uid, {}).get("history", [])
+    if hist:
+        st.dataframe(pd.DataFrame(hist)[["time", "status", "analyst", "note"]].iloc[::-1], hide_index=True, width="stretch", height=150)
+
+
+def _drivers(uid, n=3):
+    dev = soc.feature_deviations(data["features"], uid, feature_cols, n)
+    return ", ".join(f"{r.feature} ({r.z_score:+.1f} sd)" for r in dev.itertuples())
+
+
+tab_alerts, tab_inv, tab_rt, tab_live, tab_graph, tab_models, tab_upload = st.tabs(
+    ["Alert queue", "Investigate", "Real-time monitor", "Attack simulation", "Entity graph", "Model evaluation", "Upload & analyse"]
 )
 
 with tab_alerts:
@@ -129,31 +156,54 @@ with tab_alerts:
         unsafe_allow_html=True,
     )
 
-    col1, col2, col3, col4 = st.columns(4)
+    cases = st.session_state["cases"]
+    alert_cases = soc.with_case_columns(alert_df, cases)
+    col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("Users monitored", len(data["features"]))
     col2.metric("Alerts shown", len(alert_df))
     col3.metric("High risk", int((alert_df.risk_level == "High").sum()))
-    col4.metric("Confirmed insiders in queue", int(alert_df.is_malicious.sum()))
+    col4.metric("Open cases", int(alert_cases.case_status.isin(soc.OPEN_STATUSES).sum()))
+    col5.metric("Confirmed insiders in queue", int(alert_df.is_malicious.sum()))
 
     st.subheader(f"Top {top_k} alerts - {model_name}")
-    st.dataframe(
+    st.caption("Click a row to open it below. Case status and notes are kept for this session; export or import them as CSV.")
+    sel = st.dataframe(
         ui_theme.style_risk_table(
-            alert_df[["rank", "user_id", "risk_score", "risk_level", "is_malicious", "scenario"]]
+            alert_cases[["rank", "user_id", "risk_score", "risk_level", "case_status", "is_malicious", "scenario"]]
         ),
         width="stretch",
         hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="alert_table",
         column_config={
             "rank": st.column_config.NumberColumn("Rank", width="small"),
             "user_id": st.column_config.TextColumn("Entity"),
             "risk_score": st.column_config.ProgressColumn("Risk score", min_value=0, max_value=100, format="%.1f"),
             "risk_level": st.column_config.TextColumn("Severity", width="small"),
+            "case_status": st.column_config.TextColumn("Case status"),
             "is_malicious": st.column_config.CheckboxColumn("Ground truth: insider", width="small"),
             "scenario": st.column_config.TextColumn("Injected scenario"),
         },
     )
+    picked = sel.selection.rows[0] if sel.selection.rows else 0
+
+    e1, e2, e3 = st.columns([1, 1, 2])
+    e1.download_button("Download CSV", soc.alerts_csv(alert_df, cases), "alerts.csv", "text/csv", width="stretch")
+    e2.download_button("Download PDF report",
+                       soc.alerts_pdf(alert_df, cases, model_name, {u: _drivers(u) for u in alert_df.user_id}),
+                       "alert_report.pdf", "application/pdf", width="stretch")
+    with e3.expander("Save / restore case log"):
+        log = soc.cases_to_frame(cases)
+        st.download_button("Download case log (CSV)", log.to_csv(index=False).encode("utf-8"), "case_log.csv", "text/csv",
+                           disabled=log.empty)
+        up = st.file_uploader("Restore a saved case log", type="csv", key="case_upload")
+        if up is not None and st.button("Load case log", key="case_load"):
+            st.session_state["cases"] = soc.cases_from_frame(pd.read_csv(up))
+            st.rerun()
 
     st.subheader("Explain an alert")
-    selected_uid = st.selectbox("Select a user to explain", alert_df.user_id.tolist())
+    selected_uid = st.selectbox("Select a user to explain", alert_df.user_id.tolist(), index=int(picked))
 
     if selected_uid:
         row = alert_df[alert_df.user_id == selected_uid].iloc[0]
@@ -161,6 +211,8 @@ with tab_alerts:
         c1.metric("Risk score", f"{row.risk_score:.1f}/100")
         c2.metric("Risk level", row.risk_level)
         c3.metric("Ground truth", "Malicious" if row.is_malicious else "Normal")
+
+        _case_panel(selected_uid, "aq")
 
         with st.spinner("Computing SHAP / LIME explanation..."):
             shap_s, lime_s = _explain(model_name, selected_uid, models, X, feature_cols, user_ids)
@@ -203,6 +255,56 @@ def _start_stream(interval):
     scorer = RealTimeScorer(os.path.join(d, "events.jsonl"), model, feature_cols, train_mean, train_std,
                             train_scores.min(), train_scores.max())
     st.session_state["rt"] = {"proc": proc, "dir": d, "scorer": scorer, "done": False, "model": model_name}
+
+
+with tab_inv:
+    st.subheader("Investigate an entity")
+    st.caption("Everything an analyst needs about one user in one place: unusual behaviours, activity over time, "
+               "comparison with their department, model explanation, network context and the case record.")
+    base_alerts = _alert_table(model_name, 100, data["features"], data["labels"], models, X)
+    ids_by_risk = base_alerts.user_id.tolist()
+    inv_uid = st.selectbox("Entity (highest risk first)", ids_by_risk, key="inv_uid")
+    inv_row = base_alerts[base_alerts.user_id == inv_uid].iloc[0]
+    urow = data["users"][data["users"].user_id == inv_uid].iloc[0]
+    lab = data["labels"][data["labels"].user_id == inv_uid].iloc[0]
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Risk score", f"{inv_row.risk_score:.1f}/100")
+    k2.metric("Rank", f"#{int(inv_row['rank'])} of {len(base_alerts)}")
+    k3.metric("Department", urow.department)
+    k4.metric("Case status", soc.case_status(st.session_state["cases"], inv_uid))
+    st.caption(f"{urow.full_name} - {urow['role']} - {urow.email}")
+
+    tl, dv = st.columns([1.15, 1])
+    with tl:
+        tchart = charts.timeline_chart(soc.activity_timeline(data["file_df"], data["email_df"], inv_uid),
+                                       lab.injected_day if bool(lab.is_malicious) else None)
+        if tchart is not None:
+            st.altair_chart(tchart, width="stretch")
+            if bool(lab.is_malicious):
+                st.caption("Red dashed line: day the attack was injected (ground truth, demo data only).")
+        else:
+            st.info("No file or e-mail activity recorded for this user.")
+    with dv:
+        st.altair_chart(charts.deviation_chart(soc.feature_deviations(data["features"], inv_uid, feature_cols, 10)),
+                        width="stretch")
+
+    st.markdown("**Compared with the same department**")
+    peer = soc.peer_comparison(data["features"], data["users"], inv_uid, feature_cols, 6)
+    st.dataframe(peer.drop(columns="department").round(2), hide_index=True, width="stretch",
+                 column_config={"feature": "Feature", "value": "This user", "department_mean": f"{urow.department} mean",
+                                "population_mean": "Everyone", "z_score": "z-score"})
+    sh, gr = st.columns(2)
+    with sh:
+        st.markdown("**Why the model flagged this user (SHAP / LIME)**")
+        with st.spinner("Computing explanation..."):
+            _s, _l = _explain(model_name, inv_uid, models, X, feature_cols, user_ids)
+            st.pyplot(du.explanation_figure(_s, _l, inv_uid))
+    with gr:
+        st.markdown("**Resource / relationship neighbourhood**")
+        _sf = _neighbourhood_fig(inv_uid, data)
+        if _sf:
+            st.pyplot(_sf)
+    _case_panel(inv_uid, "inv")
 
 
 with tab_rt:
@@ -442,6 +544,53 @@ with tab_graph:
         )
 
 with tab_models:
+    st.subheader("Do the models agree?")
+    st.caption("All detectors score the same 100 users. Where they agree the alert is more trustworthy; "
+               "an entity flagged by one model only deserves a second look before it consumes analyst time.")
+    cmp_k = st.slider("Compare each model's top-k alerts", 5, 30, 10, key="cmp_k")
+    with st.spinner("Scoring with every model..."):
+        ranks, overlap, consensus = soc.model_rankings(lambda m: du.score_users(models, m, X)[1], du.MODEL_CHOICES,
+                                                       list(user_ids), cmp_k)
+    truth = data["labels"].set_index("user_id").is_malicious.to_dict()
+    ca, cb = st.columns([1.1, 1])
+    with ca:
+        _short = lambda n: n.replace("Isolation Forest", "IForest").replace(" (sklearn)", " (sk)").replace(" (Keras)", " (K)").replace(" detector", "")
+        st.altair_chart(charts.agreement_heatmap(overlap.rename(index=_short, columns=_short)), width="stretch")
+    with cb:
+        st.markdown("**Consensus alerts**")
+        cons = consensus.copy()
+        cons["ground_truth_insider"] = cons.user_id.map(truth).fillna(False)
+        cons["mean_rank"] = cons.mean_rank.round(1)
+        st.dataframe(cons.head(12), hide_index=True, width="stretch",
+                     column_config={"models_flagging": st.column_config.ProgressColumn(
+                         f"Models flagging (of {len(du.MODEL_CHOICES)})", min_value=0, max_value=len(du.MODEL_CHOICES), format="%d"),
+                         "ground_truth_insider": st.column_config.CheckboxColumn("Ground truth")})
+    side = {m: ranks[m].nsmallest(cmp_k).index.tolist() for m in du.MODEL_CHOICES}
+    st.markdown("**Side-by-side top alerts**")
+    st.dataframe(pd.DataFrame(side, index=[f"#{i}" for i in range(1, cmp_k + 1)]), width="stretch")
+
+    st.subheader("Alert threshold simulator")
+    st.caption("Move the threshold and see the trade-off: a low threshold catches every insider but floods the analysts with "
+               "false alarms; a high one is quiet but misses attacks. Uses the dataset's ground truth, so it is a tuning aid "
+               "for the demo data, not something a production deployment could compute directly.")
+    sim_model = st.selectbox("Model", du.MODEL_CHOICES, index=du.MODEL_CHOICES.index(model_name), key="sim_model")
+    sim_thr = st.slider("Alert threshold", 0, 100, 70, 1, key="sim_thr")
+    risk_all = du.score_users(models, sim_model, X)[1]
+    y_all = data["labels"].set_index("user_id").loc[list(user_ids), "is_malicious"].astype(bool).values
+    sweep = soc.threshold_sweep(risk_all, y_all)
+    at_t = sweep[sweep.threshold == sim_thr].iloc[0]
+    best = soc.best_threshold(sweep)
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("Users alerted", int(at_t.alerts))
+    m2.metric("Precision", f"{at_t.precision:.0%}")
+    m3.metric("Recall", f"{at_t.recall:.0%}")
+    m4.metric("False alarms", int(at_t.false_positives))
+    m5.metric("Insiders missed", int(at_t.missed_insiders))
+    st.caption(f"Best F1 on this dataset: threshold {best.threshold:.0f} (precision {best.precision:.0%}, recall {best.recall:.0%}).")
+    s1, s2 = st.columns(2)
+    s1.altair_chart(charts.threshold_chart(sweep, sim_thr), width="stretch")
+    s2.altair_chart(charts.alert_volume_chart(sweep, sim_thr), width="stretch")
+
     st.subheader("Model comparison (Day 4 + Day 5)")
     st.dataframe(data["model_comparison"].round(3), width="stretch")
     col1, col2 = st.columns(2)
