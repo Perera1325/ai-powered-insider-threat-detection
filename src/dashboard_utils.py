@@ -173,16 +173,38 @@ def explain_user(models, model_name, X, feature_cols, user_ids, uid, n_shap_samp
     return shap_series, lime_series
 
 
-def explanation_figure(shap_series, lime_series, uid, top_n=8):
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-    shap_top = shap_series.head(top_n).sort_values()
-    lime_top = lime_series.head(top_n).sort_values()
+NAVY, BLUE, LIGHT_BLUE, GREY = "#1E3A8A", "#2563EB", "#93C5FD", "#64748B"
 
-    shap_top.plot.barh(ax=axes[0], color=np.where(shap_top >= 0, "#d94a4a", "#4a90d9"))
-    axes[0].set_title(f"{uid} - SHAP")
-    lime_top.plot.barh(ax=axes[1], color=np.where(lime_top >= 0, "#d94a4a", "#4a90d9"))
-    axes[1].set_title(f"{uid} - LIME")
-    plt.tight_layout()
+
+def explanation_figure(shap_series, lime_series, uid, top_n=8):
+    """Journal-style two-panel attribution plot: blue = raises anomaly score, light blue = lowers it."""
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.2))
+    panels = [(axes[0], shap_series, "(a) SHAP", "Contribution to anomaly score (SHAP value)"),
+              (axes[1], lime_series, "(b) LIME", "Local surrogate weight (LIME)")]
+    for ax, series, title, xlabel in panels:
+        s = series.head(top_n).sort_values()
+        colours = np.where(s.values >= 0, NAVY, LIGHT_BLUE)
+        ax.barh(range(len(s)), s.values, color=colours, edgecolor=NAVY, linewidth=0.6, height=0.62, zorder=3)
+        ax.set_yticks(range(len(s)))
+        ax.set_yticklabels(s.index, fontsize=8.5)
+        span = max(abs(s.values).max(), 1e-12)
+        for k, v in enumerate(s.values):
+            ax.text(max(v, 0) + 0.02 * span, k, f"{v:.3f}" if abs(v) >= 0.001 else f"{v:.1e}",
+                    va="center", ha="left", fontsize=7.5, color=GREY)
+        lo, hi = min(0, s.values.min()), max(0, s.values.max())
+        ax.set_xlim(lo - 0.06 * span if lo < 0 else 0, hi + 0.22 * span)
+        ax.axvline(0, color="#334155", lw=0.8, zorder=4)
+        ax.grid(axis="x", color="#E2E8F0", lw=0.6, ls="--", zorder=0)
+        ax.set_axisbelow(True)
+        ax.set_xlabel(xlabel, fontsize=8.5)
+        ax.set_title(f"{title}  -  {uid}", loc="left", fontsize=10, fontweight="bold", color=NAVY)
+        for sp in ("top", "right"):
+            ax.spines[sp].set_visible(False)
+    from matplotlib.patches import Patch
+    fig.legend(handles=[Patch(facecolor=NAVY, edgecolor=NAVY, label="Raises anomaly score"),
+                        Patch(facecolor=LIGHT_BLUE, edgecolor=NAVY, label="Lowers anomaly score")],
+               loc="lower center", ncol=2, frameon=False, fontsize=8.5, bbox_to_anchor=(0.5, -0.02))
+    fig.tight_layout(rect=(0, 0.05, 1, 1))
     return fig
 
 
@@ -191,40 +213,49 @@ def build_full_graph(data):
 
 
 def subgraph_figure(G, uid, radius=1, top_contacts=12):
-    """Clean 'ego' view: the user in the centre, shared folders on an inner ring and the
-    strongest email contacts on an outer ring (readable, unlike the full neighbourhood)."""
+    """Journal-style ego network: focal user (centre), shared folders (inner ring), strongest
+    e-mail contacts (outer ring). Edge width is proportional to interaction count."""
     if uid not in G:
         return None
     import math
+    from matplotlib.lines import Line2D
 
     resources = [n for n in G.neighbors(uid) if G.nodes[n].get("node_type") == "resource"]
     people = [(n, G[uid][n].get("weight", 1)) for n in G.neighbors(uid) if n not in resources]
     people = [n for n, _ in sorted(people, key=lambda t: -t[1])[:top_contacts]]
 
-    fig, ax = plt.subplots(figsize=(7, 6))
+    fig, ax = plt.subplots(figsize=(7, 6.2))
     pos = {uid: (0.0, 0.0)}
     for i, n in enumerate(resources):
-        a = 2 * math.pi * i / max(len(resources), 1) + math.pi / 6
+        a = 2 * math.pi * i / max(len(resources), 1) + math.pi / 4
         pos[n] = (0.45 * math.cos(a), 0.45 * math.sin(a))
     for i, n in enumerate(people):
         a = 2 * math.pi * i / max(len(people), 1)
         pos[n] = (math.cos(a), math.sin(a))
+    wmax = max([float(G[uid][n].get("weight", 1)) for n in resources + people] + [1.0])
     for n in resources + people:
-        w = G[uid][n].get("weight", 1)
-        ax.plot([0, pos[n][0]], [0, pos[n][1]], color="#B6C2D4", lw=0.8 + min(float(w), 20) / 6, zorder=1, alpha=0.9)
-    ax.scatter([pos[n][0] for n in resources], [pos[n][1] for n in resources], s=900, marker="s",
-               color="#F59E0B", edgecolor="white", zorder=3)
+        w = float(G[uid][n].get("weight", 1))
+        ax.plot([0, pos[n][0]], [0, pos[n][1]], color="#94A3B8", lw=0.6 + 2.6 * w / wmax, zorder=1, alpha=0.85,
+                solid_capstyle="round")
+    ax.scatter([pos[n][0] for n in resources], [pos[n][1] for n in resources], s=1100, marker="s",
+               facecolor="#DBEAFE", edgecolor=NAVY, linewidth=1.2, zorder=3)
     for n in resources:
-        ax.text(*pos[n], str(n).replace("folder:", ""), ha="center", va="center", fontsize=8, color="#1B2433", zorder=4)
-    ax.scatter([pos[n][0] for n in people], [pos[n][1] for n in people], s=420, color="#2563EB",
-               edgecolor="white", zorder=3)
+        ax.text(*pos[n], str(n).replace("folder:", ""), ha="center", va="center", fontsize=8, color=NAVY, zorder=4)
+    ax.scatter([pos[n][0] for n in people], [pos[n][1] for n in people], s=360, facecolor="white",
+               edgecolor=BLUE, linewidth=1.8, zorder=3)
     for n in people:
         x, y = pos[n]
-        ax.text(x * 1.16, y * 1.16, n, ha="center", va="center", fontsize=8.5, color="#1B2433")
-    ax.scatter([0], [0], s=1100, color="#DC2626", edgecolor="white", linewidth=2, zorder=5)
-    ax.text(0, -0.17, uid, ha="center", va="center", fontsize=10, fontweight="bold", color="#1B2433", zorder=6)
+        ax.text(x * 1.15, y * 1.15, n, ha="center", va="center", fontsize=8.5, color="#1B2433")
+    ax.scatter([0], [0], s=1500, facecolor=NAVY, edgecolor="white", linewidth=2, zorder=5)
+    ax.text(0, 0, uid, ha="center", va="center", fontsize=8.5, fontweight="bold", color="white", zorder=6)
     ax.set_xlim(-1.4, 1.4); ax.set_ylim(-1.3, 1.3)
-    ax.set_title(f"{uid}: shared folders (inner ring) and {len(people)} strongest email contacts")
+    ax.set_title(f"Ego network of {uid}", loc="left", fontsize=11, fontweight="bold", color=NAVY)
+    ax.legend(handles=[
+        Line2D([0], [0], marker="o", color="w", markerfacecolor=NAVY, markersize=11, label="Focal user"),
+        Line2D([0], [0], marker="s", color="w", markerfacecolor="#DBEAFE", markeredgecolor=NAVY, markersize=10, label="Shared folder"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor="white", markeredgecolor=BLUE, markeredgewidth=1.6,
+               markersize=10, label=f"E-mail contact (top {len(people)})")],
+        loc="lower center", ncol=3, frameon=False, fontsize=8.5, bbox_to_anchor=(0.5, -0.04))
     ax.axis("off")
-    plt.tight_layout()
+    fig.tight_layout()
     return fig

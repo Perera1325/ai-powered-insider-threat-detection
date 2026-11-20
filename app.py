@@ -348,7 +348,7 @@ with tab_graph:
     st.subheader("Organisation network - users, departments and shared folders")
     st.caption(
         "Deterministic cluster layout (no animation): departments on a ring, shared folders in the centre. "
-        "Colour = risk (green low, red high); size = e-mail strength; black outline = ground-truth insider "
+        "Colour = risk (light blue low, dark blue high); size = e-mail strength; black outline = ground-truth insider "
         "(demo data only). Scroll to zoom, drag to pan, hover for metrics."
     )
     c1, c2, c3 = st.columns([1.2, 1.2, 1.6])

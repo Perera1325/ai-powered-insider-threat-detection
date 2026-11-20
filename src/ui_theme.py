@@ -105,11 +105,13 @@ def style_risk_table(df):
 
 
 def apply_matplotlib_theme():
+    """Publication-style defaults: white background, serif text, thin axes, light dashed grid."""
     mpl.rcParams.update({
-        "figure.facecolor": PALETTE["panel"], "axes.facecolor": PALETTE["panel"],
-        "savefig.facecolor": PALETTE["panel"], "axes.edgecolor": PALETTE["border"],
-        "axes.labelcolor": "#3A4A63", "text.color": PALETTE["text"],
-        "xtick.color": PALETTE["muted"], "ytick.color": PALETTE["muted"],
-        "grid.color": PALETTE["border"], "axes.titleweight": "bold", "axes.titlesize": 10,
+        "figure.facecolor": "#FFFFFF", "axes.facecolor": "#FFFFFF", "savefig.facecolor": "#FFFFFF",
+        "font.family": "serif", "font.serif": ["Times New Roman", "DejaVu Serif", "serif"],
+        "axes.edgecolor": "#334155", "axes.linewidth": 0.8,
+        "axes.labelcolor": "#1E293B", "text.color": "#1B2433",
+        "xtick.color": "#334155", "ytick.color": "#334155",
+        "grid.color": "#E2E8F0", "grid.linestyle": "--", "axes.titleweight": "bold", "axes.titlesize": 10,
         "axes.spines.top": False, "axes.spines.right": False, "font.size": 9,
     })

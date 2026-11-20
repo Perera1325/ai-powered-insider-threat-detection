@@ -13,9 +13,9 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 
-RISK_SCALE = alt.Scale(domain=[0, 40, 70, 100], range=["#16A34A", "#FACC15", "#F97316", "#DC2626"], clamp=True)
+RISK_SCALE = alt.Scale(domain=[0, 40, 70, 100], range=["#DBEAFE", "#93C5FD", "#2563EB", "#1E3A8A"], clamp=True)
 EDGE_KINDS = ["Within department", "Cross-department", "Involves flagged user", "File access (flagged user)"]
-EDGE_COLOURS = ["#94A3B8", "#475569", "#DC2626", "#F59E0B"]
+EDGE_COLOURS = ["#94A3B8", "#475569", "#1D4ED8", "#60A5FA"]
 
 
 def _users(G):
@@ -139,14 +139,14 @@ def network_chart(G, table, min_w=7, label_risk=50, focus=None, height=620):
             opacity=alt.Opacity("kind:N", scale=alt.Scale(domain=EDGE_KINDS, range=[0.38, 0.32, 0.75, 0.7] if not focus else [0.7] * 4), legend=None),
             tooltip=["link:N", "kind:N", "weight:Q"]))
     layers.append(alt.Chart(ddf).mark_text(fontSize=12, fontWeight="bold", color="#334155").encode(x=xs, y=ys, text="department:N"))
-    layers.append(alt.Chart(rdf).mark_square(size=900, color="#F59E0B", opacity=0.95, stroke="#B45309", strokeWidth=1).encode(
+    layers.append(alt.Chart(rdf).mark_square(size=900, color="#DBEAFE", opacity=1, stroke="#1E3A8A", strokeWidth=1.2).encode(
         x=xs, y=ys, tooltip=[alt.Tooltip("name:N", title="Shared folder")]))
-    layers.append(alt.Chart(rdf).mark_text(fontSize=11, color="#1B2433", fontWeight="bold").encode(x=xs, y=ys, text="name:N"))
+    layers.append(alt.Chart(rdf).mark_text(fontSize=11, color="#1E3A8A", fontWeight="bold").encode(x=xs, y=ys, text="name:N"))
     layers.append(alt.Chart(ndf).mark_circle().encode(
         x=xs, y=ys,
         size=alt.Size("strength:Q", scale=alt.Scale(range=[60, 420]), legend=alt.Legend(title="E-mail strength")),
         color=alt.Color("risk:Q", scale=RISK_SCALE, legend=alt.Legend(title="Risk (0-100)", gradientLength=160)),
-        stroke=alt.condition("datum.insider", alt.value("#111827"), alt.value("#FFFFFF")),
+        stroke=alt.condition("datum.insider", alt.value("#000000"), alt.value("#FFFFFF")),
         strokeWidth=alt.condition("datum.insider", alt.value(3), alt.value(1)),
         opacity=alt.condition("datum.dim", alt.value(0.18), alt.value(0.95)),
         tooltip=[alt.Tooltip("user:N", title="User"), "department:N", alt.Tooltip("risk:Q", format=".1f"),
@@ -165,7 +165,7 @@ def risk_vs_strength_chart(table, rho, height=330):
         x=alt.X("strength:Q", title="E-mail strength (sum of link weights)"),
         y=alt.Y("risk:Q", title="Risk score (0-100)", scale=alt.Scale(domain=[0, 105])))
     pts = base.mark_circle(size=90, opacity=0.85).encode(
-        color=alt.Color("insider:N", title="Ground-truth insider", scale=alt.Scale(domain=[False, True], range=["#2563EB", "#DC2626"])),
+        color=alt.Color("insider:N", title="Ground-truth insider", scale=alt.Scale(domain=[False, True], range=["#93C5FD", "#1E3A8A"])),
         tooltip=["user:N", "department:N", alt.Tooltip("risk:Q", format=".1f"), "strength:Q", "scenario:N"])
     fit = base.transform_regression("strength", "risk").mark_line(color="#64748B", strokeDash=[5, 4])
     thr = alt.Chart(pd.DataFrame({"y": [70]})).mark_rule(color="#DC2626", strokeDash=[4, 4]).encode(y="y:Q")
