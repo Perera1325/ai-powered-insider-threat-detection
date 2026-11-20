@@ -473,7 +473,7 @@ with tab_live:
                 m1, m2, m3 = st.columns(3)
                 m1.metric("Simulated day", f"{state['tick']} / {n_ticks}")
                 m2.metric(f"{demo_user_id} risk score", f"{demo_row.risk_score:.1f}/100")
-                m3.metric("Status", "ATTACK INJECTED" if state["injected"] else "monitoring...")
+                m3.metric("Status", "ATTACK ACTIVE" if state["tick"] >= inject_at_tick else "monitoring...")
 
             chart_placeholder.altair_chart(charts.live_risk_chart(history, demo_user_id, inject_at_tick), width="stretch")
 
