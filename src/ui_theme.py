@@ -71,6 +71,25 @@ h3 {{ font-size:1.02rem !important; text-transform:uppercase; color:#3A4A63; mar
 [data-testid="stDataFrame"] {{ border:1px solid var(--border); border-radius:6px; }}
 [data-testid="stCaptionContainer"] {{ color:var(--muted); }}
 hr {{ border-color:var(--border) !important; }}
+/* ---- motion: subtle, purposeful, and disabled for reduced-motion users ---- */
+@keyframes panel-in {{ from {{ opacity:0; transform:translateY(6px); }} to {{ opacity:1; transform:none; }} }}
+@keyframes live-pulse {{ 0% {{ box-shadow:0 0 0 0 rgba(22,163,74,.45); }} 70% {{ box-shadow:0 0 0 7px rgba(22,163,74,0); }}
+                         100% {{ box-shadow:0 0 0 0 rgba(22,163,74,0); }} }}
+@keyframes tab-bar {{ from {{ transform:scaleX(.4); opacity:.4; }} to {{ transform:none; opacity:1; }} }}
+.stTabs [data-baseweb="tab-panel"] {{ animation:panel-in .28s ease-out; }}
+.dot {{ animation:live-pulse 2.2s ease-out infinite; }}
+[data-testid="stMetric"] {{ transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease; }}
+[data-testid="stMetric"]:hover {{ transform:translateY(-2px); box-shadow:0 6px 14px rgba(30,64,175,.12); border-color:#BFD3F6; }}
+.stButton > button {{ transition:background-color .15s ease, border-color .15s ease, box-shadow .15s ease, transform .1s ease; }}
+.stButton > button:hover {{ border-color:var(--accent); box-shadow:0 2px 8px rgba(37,99,235,.18); }}
+.stButton > button:active {{ transform:scale(.98); }}
+.stTabs [data-baseweb="tab"] {{ transition:color .15s ease, background-color .15s ease; }}
+.stTabs [data-baseweb="tab"]:hover {{ color:var(--accent); background:rgba(37,99,235,.05); }}
+.stTabs [data-baseweb="tab-highlight"] {{ transition:left .25s ease, width .25s ease; background-color:var(--accent); }}
+[data-testid="stDataFrame"], [data-testid="stVegaLiteChart"] {{ transition:box-shadow .2s ease; }}
+[data-testid="stDataFrame"]:hover {{ box-shadow:0 2px 10px rgba(16,24,40,.07); }}
+.soc-strip {{ animation:panel-in .35s ease-out; }}
+@media (prefers-reduced-motion: reduce) {{ *, *::before, *::after {{ animation:none !important; transition:none !important; }} }}
 </style>
 """
 
