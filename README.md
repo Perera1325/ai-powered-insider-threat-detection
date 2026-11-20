@@ -1,118 +1,107 @@
-# AI-Powered Insider Threat Detection System
+# AI-Powered Insider Threat Detection
 
-Final Year Project (BSc (Hons) Cyber Security Top-up) — an AI-driven
-insider threat detection system combining unsupervised machine learning,
-graph analysis, and explainable AI (XAI) to identify anomalous user
-behaviour within simulated organizational environments.
+[![tests](https://github.com/Perera1325/ai-powered-insider-threat-detection/actions/workflows/tests.yml/badge.svg)](https://github.com/Perera1325/ai-powered-insider-threat-detection/actions/workflows/tests.yml)
+![python](https://img.shields.io/badge/python-3.12-blue)
+![streamlit](https://img.shields.io/badge/streamlit-1.67%2B-1D4ED8)
+
+An unsupervised insider-threat detection system with a SOC-style dashboard. It learns what normal
+behaviour looks like for an organisation, flags users who deviate from it, explains **why** each user was
+flagged (SHAP and LIME), shows their network context, and lets an analyst work the alerts as cases.
+Final year project (BSc (Hons) Cyber Security Top-up).
 
 **Student:** T. Siyath Sathnidu (HCL/IT/CYBR/2097)
 
-This project does not use, collect, or store any real personal or
-confidential organizational data. All activity logs are synthetically
-generated for research and academic purposes only.
+> All data is synthetic. No real employee, customer or organisational data is used, collected or stored.
 
-## Project pipeline
+---
 
-1. **Log simulation** — synthetic organizational activity logs (logon,
-   device/USB, HTTP, email, file access)
-2. **Red-team injection** — labeled insider-threat scenarios injected
-   into the baseline logs, kept separate as ground truth for evaluation only
-3. **Feature engineering** — behavioural, statistical, and graph features
-4. **Anomaly detection** — Isolation Forest, One-Class SVM, Autoencoder
-5. **Graph analysis** — user/system/resource relationship graphs (NetworkX)
-6. **Explainable AI** — SHAP and LIME explanations for flagged alerts
-7. **Dashboard** — interactive Streamlit SOC-style dashboard
+## Quick start (about 2 minutes)
 
-See [docs/project_plan.md](docs/project_plan.md) for the full day-by-day
-build plan.
+The generated dataset is committed to the repository, so you do **not** need to build anything first.
 
-## Status
+```bash
+git clone https://github.com/Perera1325/ai-powered-insider-threat-detection.git
+cd ai-powered-insider-threat-detection
 
-- [x] Day 1 — synthetic dataset generator + red-team anomaly injection + EDA
-- [x] Day 2 — deeper EDA / dataset calibration (heatmaps, correlations, CERT loader stub)
-- [x] Day 3 — feature engineering (25 behavioral/statistical features per user)
-- [x] Day 4 — baseline unsupervised models (Isolation Forest + Mahalanobis detector; see note below on One-Class SVM)
-- [x] Day 5 — Autoencoder (from scratch) + graph analysis (NetworkX)
-- [x] Day 6 — Explainable AI (from-scratch SHAP + LIME)
-- [x] Day 7 — Streamlit dashboard + final integration
-- [x] Day 8 — real libraries wired in (scikit-learn IsolationForest/OneClassSVM, TensorFlow/Keras autoencoder, `shap`, `lime`), multi-seed robust evaluation, interactive PyVis graph, recipient-metadata email features, 59-test pytest suite, dashboard verified with real Streamlit
+python3 -m venv .venv
+source .venv/bin/activate            # Git Bash on Windows: source .venv/Scripts/activate
+pip install -r requirements.txt
 
-Daily write-ups: [Day 1](docs/day1_progress.md) · [Day 2](docs/day2_progress.md) ·
-[Day 3](docs/day3_progress.md) · [Day 4](docs/day4_progress.md) · [Day 5](docs/day5_progress.md) ·
-[Day 6](docs/day6_progress.md) · [Day 7](docs/day7_progress.md) · [Day 8](docs/day8_progress.md).
-Final evaluation: [docs/robust_evaluation.md](docs/robust_evaluation.md) · test report: [docs/final_test_report.md](docs/final_test_report.md).
-Generated figures live under [docs/figures/](docs/figures/).
-
-**Read the Day 4-7 write-ups even if you only skim this repo** - each
-documents an honest limitation or a real debugging finding (why the
-"perfect" model scores aren't a real-world accuracy claim, why graph
-analysis came up empty, why LIME was noisier than SHAP, why the
-dashboard was first verified via a stub - superseded in Day 8 by real Streamlit tests) rather than
-just reporting clean success. That's deliberate and worth carrying into
-the final report.
-
-## Repository structure
-
-```
-src/
-  generate_logs.py         # synthetic log generator (Day 1)
-  inject_anomalies.py      # red-team scenario injection + ground truth labels
-  eda_day1.py              # Day 1 sanity-check EDA
-  eda_day2.py              # Day 2 deeper EDA (heatmaps, correlations, comparisons)
-  load_cert.py             # optional CERT r4.2 loader (for later cross-validation)
-  feature_engineering.py   # Day 3: builds per-user behavioral feature table
-  day3_ranking_check.py    # Day 3: naive z-score ranking sanity check
-  train_baseline_models.py # Day 4: trains + evaluates unsupervised models
-  train_autoencoder.py     # Day 5: trains + evaluates the autoencoder
-  graph_analysis.py        # Day 5: NetworkX user-resource graph + centrality
-  models/
-    isolation_forest.py    # Day 4: from-scratch Isolation Forest (see note in docs/day4_progress.md)
-    mahalanobis.py          # Day 4: Mahalanobis detector (One-Class SVM stand-in, see same note)
-    autoencoder.py           # Day 5: from-scratch Autoencoder (see note in docs/day5_progress.md)
-  explain_day6.py            # Day 6: explains flagged users with SHAP + LIME
-  explain/
-    kernel_shap.py            # Day 6: from-scratch Kernel SHAP (see note in docs/day6_progress.md)
-    lime_explainer.py          # Day 6: from-scratch LIME (see same note)
-  models/real_models.py        # Day 8: scikit-learn IF / One-Class SVM + Keras Autoencoder (drop-in, same interface)
-  explain/real_explainers.py   # Day 8: real `shap` KernelExplainer + `lime` tabular explainer
-  pyvis_graph.py               # Day 8: interactive PyVis user-resource graph (HTML)
-  realtime/event_producer.py   # Day 8: separate-process log stream (JSON lines), on-demand attack injection
-  realtime/scorer.py           # Day 8: incremental sliding-window scorer + alerts (see docs/realtime.md)
-  robust_evaluation.py         # Day 8: 8 unseen seeds + attack-strength stress test
-  dashboard_utils.py           # Day 7: testable core logic behind the dashboard
-  live_demo.py                  # Live-demo mode: real-time simulated feed + injection
-app.py                         # Day 7: Streamlit SOC dashboard (streamlit run app.py)
-tests/                          # Day 8: pytest suite (59 tests) incl. the real Streamlit app via AppTest
-  test_data.py  test_pipeline.py  test_models.py  test_explain_graph.py
-  test_live_demo.py  test_dashboard_app.py  test_performance.py  test_realtime.py  conftest.py
-.github/workflows/tests.yml     # CI: runs the suite on every push
-data/
-  raw/                  # place manually-downloaded external datasets here (gitignored)
-  processed/full/       # generated dataset (users, logon, device, http, email, file, labels)
-  sample/               # small committed samples for quick inspection
-docs/
-  project_plan.md         # full 7-day build plan
-  day1_progress.md ... day7_progress.md   # daily write-ups
-  day1_eda_summary.md, day2_eda_summary.md, day3_ranking_check.md,
-  day5_graph_summary.md, day6_explainability_report.md              # generated findings
-  figures/                 # all generated plots
-requirements.txt
+streamlit run app.py
 ```
 
-## Real libraries
+Streamlit prints a local address (normally <http://localhost:8501>); open it in a browser.
 
-Days 4-6 were first written from scratch in NumPy because the original dev
-sandbox could not install scikit-learn / TensorFlow / shap / lime. Day 8 wires
-the real libraries into the main code path (`src/models/real_models.py`,
-`src/explain/real_explainers.py`) and the dashboard offers all of them; the
-from-scratch versions are kept as cross-checks. The Colab notebook
-(`notebooks/real_library_training.ipynb`) still works but is now optional.
+| You want | Run |
+|---|---|
+| The dashboard (lightweight, no TensorFlow) | `pip install -r requirements.txt` then `streamlit run app.py` |
+| Everything, including the Keras autoencoder and the test runner | `pip install -r requirements-dev.txt` |
+| The test suite | `python -m pytest -q tests` (about 2 minutes) |
+| Rebuild the dataset from scratch | see [Rebuilding the pipeline](#rebuilding-the-pipeline) |
 
-## Results (honest numbers)
+Python 3.12 is recommended (it is what CI and the hosted app use).
 
-The single 100-user dataset scores ~1.0 for most models, which is not a quality
-claim. `python3 src/robust_evaluation.py` evaluates on **8 unseen datasets**
-(200 users, 10 insiders each) and then weakens the attack (alpha = 1 -> 0.25):
+## Using the dashboard
+
+The sidebar sets the **detection model** and how many alerts to show. Every tab follows that model.
+
+| Tab | What it does |
+|---|---|
+| **Alert queue** | Ranked risk table. Click a row to open that user, read the SHAP / LIME explanation and the user's resource neighbourhood, set a **case status** (New, Investigating, Escalated, Closed) with an analyst note, and export the queue as **CSV or PDF**. Case logs can be saved and restored as CSV. |
+| **Investigate** | One page per entity: daily activity timeline, most unusual behaviours (z-scores), comparison with the user's department, model explanation, network neighbourhood and the case record. |
+| **Real-time monitor** | A separate process streams log events; the scorer tails them, rebuilds each user's features over a 30-day sliding window and raises alerts. Live KPIs, risk leaderboard, heat map, pipeline latency, alert log with top drivers and an event feed. Pause, resume, change the speed or the threshold while it runs, and inject an attack on demand. |
+| **Attack simulation** | Scripted demo: pick a user and a scenario, start the feed and watch that user's risk jump the moment the attack is injected. |
+| **Entity graph** | Deterministic (non-animated) organisation graph coloured by risk, with network statistics and a focus mode for one user and their contacts. |
+| **Model evaluation** | Do the models agree (top-k overlap and consensus alerts)? **Threshold simulator** (precision, recall, false alarms and analyst workload as you move the threshold), plus the Day 4 and multi-seed evaluation results. |
+| **Upload & analyse** | Bring your own data: upload logon / device / http / email / file logs (and optionally users) or a ready-made feature table, then score it with the selected model. |
+
+### Try this in a demo (3 minutes)
+
+1. **Alert queue** - click the top row, read the SHAP explanation, set it to *Escalated* with a note, download the PDF.
+2. **Investigate** - open the same user and show the timeline spike and the z-score chart.
+3. **Real-time monitor** - *Start stream*, wait a few ticks, *Inject attack now*, watch the risk line cross the threshold and the alert appear; drag the threshold slider.
+4. **Model evaluation** - show the agreement heat map, then the threshold simulator trade-off.
+
+[docs/live_demo_guide.md](docs/live_demo_guide.md) has a longer script.
+
+### Upload your own logs
+
+On the **Upload & analyse** tab, choose either
+
+- the raw logs (any of `logon.csv`, `device.csv`, `http.csv`, `email.csv`, `file.csv`, plus optional `users.csv`), or
+- a feature table with a `user_id` column and the 28 feature columns.
+
+The app checks the schema, builds per-user features, scores everyone with the selected model and lists the most
+unusual users with their top drivers. At least 20 users are required. Examples of the expected columns are in
+`data/processed/full/`.
+
+## How it works
+
+```
+ synthetic logs ──► red-team injection ──► feature engineering ──► anomaly models ──► risk 0-100
+ (logon, device,    (labels kept apart,     (28 behavioural        Isolation Forest      │
+  http, email,       evaluation only)        features per user)    One-Class SVM         ▼
+  file)                                                            Autoencoder     explanations (SHAP, LIME)
+                                                                   Mahalanobis      graph context (NetworkX)
+                                                                                    case management + export
+```
+
+1. **Log simulation** - synthetic organisation activity (logon, device/USB, HTTP, e-mail, file access).
+2. **Red-team injection** - labelled insider scenarios added to the baseline; labels are used only to evaluate.
+3. **Feature engineering** - 28 behavioural and statistical features per user.
+4. **Anomaly detection** - scikit-learn Isolation Forest and One-Class SVM, a Keras autoencoder, a Mahalanobis detector, and from-scratch versions kept as cross-checks. Scores are mapped to a 0-100 risk scale.
+5. **Explainability** - the `shap` KernelExplainer and `lime` tabular explainer.
+6. **Graph analysis** - user / folder / e-mail relationships with NetworkX (degree, betweenness, modularity).
+7. **Real-time pipeline** - micro-batch producer and scorer, absolute risk scale learned from the training population.
+8. **Analyst workflow** - case management, investigation view, threshold tuning and report export.
+
+Risk is an **unsupervised anomaly score**: it indicates behaviour that deviates from the population, not proof of
+malicious intent.
+
+## Results
+
+A single 100-user dataset scores close to 1.0 for most models, which is **not** a quality claim. The robust
+evaluation uses 8 unseen datasets (200 users, 10 insiders each) and then weakens the attack:
 
 | Model | ROC-AUC (mean ± std) | precision@k |
 |---|---|---|
@@ -124,80 +113,106 @@ claim. `python3 src/robust_evaluation.py` evaluates on **8 unseen datasets**
 | One-Class SVM (sklearn) | 0.938 ± 0.021 | 0.83 |
 | Autoencoder (scratch) | 0.805 ± 0.123 | 0.59 |
 
-Full tables, the low-and-slow stress test and caveats:
-[docs/robust_evaluation.md](docs/robust_evaluation.md).
+Details, the low-and-slow stress test and caveats: [docs/robust_evaluation.md](docs/robust_evaluation.md).
 
-## Live demo mode
+## Limitations (read these)
 
-The dashboard has a **🔴 Live Demo** tab that simulates a small company
-generating fresh activity day by day in real time, then injects an
-insider attack mid-stream so you can watch the risk score spike as it
-happens - built for presenting to a lecturer/audience rather than only
-showing a static result. See
-[docs/live_demo_guide.md](docs/live_demo_guide.md) for how to run and
-narrate it.
+- **Synthetic data.** Results show the method works on this generator; they are not a claim about real organisations.
+- **Ground truth is used only for evaluation.** The *Threshold simulator* and the "ground truth" columns use the dataset's answer key. A production system would not have them, so treat the simulator as a tuning aid for the demo data.
+- **Case records live in the browser session.** Use *Download case log* / *Restore a saved case log* to keep them; hosted apps forget them on restart.
+- **Hosted app has no TensorFlow.** The free hosting tier cannot hold it, so the Keras autoencoder appears only in a local install of `requirements-dev.txt`.
+- **A Keras autoencoder trained for many epochs on about 100 users memorises the insiders**, and scikit-learn's default One-Class SVM kernel is too narrow for 28 features. Both findings are documented in [docs/robust_evaluation.md](docs/robust_evaluation.md).
+- **Graph position does not predict risk** (Spearman rho near 0 on this data): the graph is context for an analyst, not a detector. See [docs/day5_progress.md](docs/day5_progress.md).
 
-## Setup
+## Rebuilding the pipeline
+
+Only needed if you want to regenerate the dataset or the figures. Run from the repository root, in this order:
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements-dev.txt
-
-# rebuild the full pipeline, in order:
 python3 src/generate_logs.py
 python3 src/inject_anomalies.py
-python3 src/eda_day1.py
-python3 src/eda_day2.py
 python3 src/feature_engineering.py
-python3 src/day3_ranking_check.py
 python3 src/train_baseline_models.py
-python3 src/train_autoencoder.py
+python3 src/train_autoencoder.py        # needs tensorflow-cpu (requirements-dev.txt)
 python3 src/graph_analysis.py
 python3 src/explain_day6.py
-python3 src/pyvis_graph.py          # interactive graph HTML
-python3 src/robust_evaluation.py    # multi-seed evaluation (~3 min)
-
-# run the whole test suite (~1.5 min):
-python -m pytest -q tests
-
-# run the dashboard:
-streamlit run app.py
+python3 src/pyvis_graph.py              # interactive graph HTML
+python3 src/robust_evaluation.py        # multi-seed evaluation (about 3 minutes)
 ```
 
-## Notes on the from-scratch models
+`src/eda_day1.py`, `src/eda_day2.py` and `src/day3_ranking_check.py` are optional exploratory reports.
 
-`src/models/isolation_forest.py`, `mahalanobis.py` and `autoencoder.py` are the
-Day 4-5 from-scratch implementations. They are kept for comparison. The
-real-library versions are the defaults in the dashboard. Two findings worth
-knowing (details in [docs/robust_evaluation.md](docs/robust_evaluation.md)):
+## Tests and CI
 
-- A Keras autoencoder trained for many epochs on ~100 users **memorises the
-  insiders** (AUC fell from 0.95 to 0.38 as epochs went 10 -> 100); winsorised
-  training (inputs clipped to ±3σ) fixes this.
-- scikit-learn's default One-Class SVM `gamma="scale"` is too narrow for 28
-  features (AUC 0.76 vs ~1.0 with a wider kernel).
+```bash
+python -m pytest -q tests
+```
 
-## Dashboard
+70 tests cover data generation, features, models, explainers, the graph, the real-time pipeline (a real producer
+subprocess), the analyst-workflow helpers, and the real Streamlit app driven headlessly with Streamlit's `AppTest`.
+GitHub Actions runs the suite on every push ([.github/workflows/tests.yml](.github/workflows/tests.yml)).
+Test report: [docs/final_test_report.md](docs/final_test_report.md).
 
-`streamlit run app.py` - tabs: Alerts (risk table + SHAP/LIME explanation per
-alert), **Real-Time** (separate log-stream process + incremental scorer, micro-batch - see [docs/realtime.md](docs/realtime.md)), Live Demo (older scripted simulation), Interactive Graph (PyVis), Model
-Comparison (incl. the robust evaluation). It is tested by `tests/test_dashboard_app.py`
-using Streamlit's own `AppTest` runner against the real app.
+## Deployment
 
-## Note on the CERT Insider Threat Dataset
+The app is deployed on Streamlit Community Cloud from `main` with `app.py` as the entry point. Steps, platform
+comparison and known limits: [docs/deployment.md](docs/deployment.md). Choose **Python 3.12** under *Advanced
+settings*; the dependencies come from `requirements.txt`.
 
-The project proposal lists the CERT Insider Threat Dataset (r4.2, CMU/DARPA)
-as an optional supplementary data source. It was not bundled into this
-repo because it is several GB and not suitable for version control. If
-you want to use it: download it manually from CMU's Figshare
-repository ("Insider Threat Test Dataset") or Kaggle, place the raw
-files under `data/raw/`, and it can be loaded alongside the synthetic
-dataset for cross-validation later in the project.
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| `streamlit: command not found` | Activate the virtual environment first, or run `python -m streamlit run app.py`. |
+| `ModuleNotFoundError` after a `git pull` | Dependencies changed: run `pip install -r requirements.txt` again. |
+| Autoencoder (Keras) missing from the model list | Install TensorFlow: `pip install -r requirements-dev.txt`. |
+| PDF export button is disabled | `pip install reportlab`. |
+| Port 8501 already in use | `streamlit run app.py --server.port 8502`. |
+| Real-time tab shows no data | Press *Start stream*; the first tick takes a moment while the models score. |
+| Hosted app is asleep | Open it and wait 30-60 seconds; free apps sleep after 12 hours without visitors. |
+
+## Repository layout
+
+```
+app.py                       Streamlit dashboard (7 tabs)
+requirements.txt             runtime dependencies (used by the hosted app)
+requirements-dev.txt         + TensorFlow (Keras autoencoder) and pytest
+src/
+  generate_logs.py           synthetic log generator
+  inject_anomalies.py        red-team scenarios + ground-truth labels
+  feature_engineering.py     per-user feature table (28 features)
+  train_baseline_models.py   baseline model training and comparison
+  train_autoencoder.py       autoencoder training and evaluation
+  robust_evaluation.py       8 unseen seeds + attack-strength stress test
+  graph_analysis.py          NetworkX graph and centrality
+  models/                    sklearn / Keras detectors plus from-scratch versions
+  explain/                   shap + lime wrappers plus from-scratch versions
+  realtime/                  event_producer.py (log stream) and scorer.py (sliding-window scoring)
+  dashboard_utils.py         testable core logic behind the dashboard
+  soc_tools.py               case management, drill-down, threshold sweep, model agreement, CSV/PDF export
+  network_view.py            deterministic network graph and statistics
+  upload_analysis.py         schema checks and features for user-uploaded data
+  charts.py, ui_theme.py     blue/white chart and page styling
+  live_demo.py               scripted attack-simulation feed
+tests/                       pytest suite (70 tests)
+data/processed/full/         generated dataset (committed); data/raw/ for optional external data
+docs/                        daily write-ups, evaluation, deployment, figures
+notebooks/                   optional Colab notebook for the real-library training
+```
+
+Daily write-ups: [Day 1](docs/day1_progress.md) · [Day 2](docs/day2_progress.md) · [Day 3](docs/day3_progress.md) ·
+[Day 4](docs/day4_progress.md) · [Day 5](docs/day5_progress.md) · [Day 6](docs/day6_progress.md) ·
+[Day 7](docs/day7_progress.md) · [Day 8](docs/day8_progress.md). Real-time design:
+[docs/realtime.md](docs/realtime.md). Build plan: [docs/project_plan.md](docs/project_plan.md).
+
+## About the CERT dataset
+
+The proposal lists the CERT Insider Threat Dataset (r4.2, CMU/DARPA) as an optional extra source. It is several GB
+and is not bundled. To use it, download it manually from CMU's Figshare repository or Kaggle, place the raw files
+under `data/raw/` (git-ignored) and load it with `src/load_cert.py`.
 
 ## Ethics
 
-All data used in this project is synthetically generated or drawn from
-publicly available research datasets (e.g. CERT). No real employee,
-customer, or organizational data is collected or processed. The system
-is developed strictly for academic and defensive cybersecurity research
-and is not intended for deployment in a live environment.
+All data is synthetically generated or taken from public research datasets such as CERT. No real personal or
+organisational data is processed. The system is built for academic and defensive cybersecurity research and is not
+intended for deployment in a live environment.
