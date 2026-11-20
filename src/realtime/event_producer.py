@@ -18,7 +18,8 @@ models were trained on. After that the stream is live.
 Attacks are injected either automatically (--inject-after N) or on demand by
 writing <dir>/control.json  {"nonce": "...", "user": "L03", "scenario": "mass_file_access"}
 (the dashboard's "Inject attack now" button does exactly that).
-Create <dir>/stop to end the stream early.
+Create <dir>/stop to end the stream early, <dir>/pause to pause it, and write seconds-per-day
+into <dir>/interval to change the speed while it is running.
 
 Run standalone:
   python src/realtime/event_producer.py --dir live --interval 2 --inject-after 8
@@ -59,7 +60,9 @@ def run_producer(out_dir="live", n_users=12, seed=123, interval=2.0, history_day
     path = os.path.join(out_dir, "events.jsonl")
     control_path = os.path.join(out_dir, "control.json")
     stop_path = os.path.join(out_dir, "stop")
-    for p in (path, control_path, stop_path):
+    pause_path = os.path.join(out_dir, "pause")
+    speed_path = os.path.join(out_dir, "interval")
+    for p in (path, control_path, stop_path, pause_path, speed_path):
         if os.path.exists(p):
             os.remove(p)
 
@@ -91,6 +94,8 @@ def run_producer(out_dir="live", n_users=12, seed=123, interval=2.0, history_day
 
         # ---- live ticks ----
         for tick in range(1, ticks + 1):
+            while os.path.exists(pause_path) and not os.path.exists(stop_path):
+                time.sleep(0.15)               # paused from the dashboard
             if os.path.exists(stop_path):
                 break
             emit = time.time()
@@ -119,6 +124,11 @@ def run_producer(out_dir="live", n_users=12, seed=123, interval=2.0, history_day
             if on_tick:
                 on_tick(tick)
             day = ld._next_weekday(day)
+            try:  # live speed control: dashboard writes seconds-per-day into <dir>/interval
+                with open(speed_path, encoding="utf-8") as sf:
+                    interval = max(0.0, float(sf.read().strip()))
+            except (OSError, ValueError):
+                pass
             if interval:
                 time.sleep(interval)
     return total

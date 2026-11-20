@@ -112,3 +112,26 @@ def test_end_to_end_subprocess_stream_alert_latency(tmp_path, matrix, rt_model):
     finally:
         proc.terminate()
         proc.wait(timeout=10)
+
+
+def test_scorer_exposes_feed_latency_and_alert_drivers(tmp_path, matrix, rt_model):
+    run_producer(str(tmp_path), interval=0, ticks=6, inject_user="L03", scenario="mass_file_access", inject_after=3)
+    sc = _scorer(str(tmp_path / "events.jsonl"), matrix, rt_model)
+    sc.poll()
+    feed = sc.feed_df(10)
+    assert len(feed) == 10 and list(feed.columns) == ["time", "kind", "user_id", "detail"]
+    lat = sc.latency_stats()
+    assert lat["p50"] is not None and lat["p95"] >= lat["p50"]
+    assert sc.live_events > 0 and sc.throughput() > 0
+    assert all(s["score_ms"] >= 0 for s in sc.tick_stats)
+    assert sc.alerts and "sd)" in sc.alerts[0]["drivers"]
+    assert sc.last_state["active_alerts"] >= 1
+
+
+def test_producer_finishes_without_pause_file(tmp_path):
+    import threading
+    d = str(tmp_path)
+    os.makedirs(d, exist_ok=True)
+    t = threading.Thread(target=run_producer, kwargs=dict(out_dir=d, interval=0, ticks=3))
+    t.start(); t.join(timeout=60)
+    assert not t.is_alive()  # no pause file -> finishes

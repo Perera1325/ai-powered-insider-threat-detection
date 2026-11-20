@@ -65,3 +65,46 @@ def risk_distribution(res):
                     y=alt.Y("count()", title="Users"), tooltip=["count()"]))
     rule = alt.Chart(pd.DataFrame({"x": [THRESHOLD]})).mark_rule(color="#DC2626", strokeDash=[5, 4], size=1.4).encode(x="x:Q")
     return _base_config((bars + rule).properties(height=220, title="Distribution of risk scores"))
+
+
+def live_leaderboard(table, threshold=THRESHOLD, n=10):
+    """Horizontal bars of the current top-n risk scores; bars at/above the threshold are dark navy."""
+    t = table.head(n).copy()
+    t["state"] = ["Alert" if r >= threshold else "Normal" for r in t.risk_score]
+    bars = (alt.Chart(t).mark_bar(size=16)
+            .encode(y=alt.Y("user_id:N", sort=t.user_id.tolist(), title=None, axis=alt.Axis(labelOverlap=False)),
+                    x=alt.X("risk_score:Q", title="Current risk (0-100)", scale=alt.Scale(domain=[0, 100])),
+                    color=alt.Color("state:N", scale=alt.Scale(domain=["Normal", "Alert"], range=["#93C5FD", "#1E3A8A"]),
+                                    legend=alt.Legend(title=None)),
+                    tooltip=["user_id", "risk_score"]))
+    labels = bars.mark_text(align="left", dx=4, color="#1B2433", fontSize=11).encode(text=alt.Text("risk_score:Q", format=".0f"), color=alt.value("#1B2433"))
+    rule = alt.Chart(pd.DataFrame({"x": [threshold]})).mark_rule(color="#DC2626", strokeDash=[5, 4], size=1.4).encode(x="x:Q")
+    return _base_config((bars + labels + rule).properties(height=alt.Step(26), title="Live risk leaderboard"))
+
+
+def risk_heatmap(hist, n_users=12):
+    """Users x time heat map of risk (rows ordered by latest risk)."""
+    if hist.empty:
+        return None
+    hist = hist.select_dtypes("number")
+    order = hist.iloc[-1].sort_values(ascending=False).index.tolist()[:n_users]
+    long = hist[order].reset_index().melt(id_vars="tick", var_name="User", value_name="Risk")
+    ch = (alt.Chart(long).mark_rect()
+          .encode(x=alt.X("tick:O", title="Tick (simulated working day)", axis=alt.Axis(labelOverlap=True)),
+                  y=alt.Y("User:N", sort=order, title=None, axis=alt.Axis(labelOverlap=False)),
+                  color=alt.Color("Risk:Q", scale=alt.Scale(domain=[0, 50, 100], range=["#EFF6FF", "#60A5FA", "#1E3A8A"]),
+                                  legend=alt.Legend(title="Risk", gradientLength=110)),
+                  tooltip=["User", "tick", alt.Tooltip("Risk:Q", format=".1f")]))
+    return _base_config(ch.properties(height=alt.Step(22), title="Risk heat map (users x time)"))
+
+
+def latency_chart(stats):
+    """Per-tick alert-pipeline latency (producer write -> scored) with the 5 s target marked."""
+    df = pd.DataFrame([s for s in stats if s["tick"] > 0])
+    if df.empty:
+        return None
+    line = (alt.Chart(df).mark_line(point=True, color="#2563EB")
+            .encode(x=alt.X("tick:Q", title="Tick"), y=alt.Y("latency_s:Q", title="Latency (s)", scale=alt.Scale(domain=[0, 5.5])),
+                    tooltip=["tick", "latency_s", "score_ms", "events"]))
+    rule = alt.Chart(pd.DataFrame({"y": [5]})).mark_rule(color="#DC2626", strokeDash=[5, 4]).encode(y="y:Q")
+    return _base_config((line + rule).properties(height=170, title="Pipeline latency per tick (target < 5 s)"))

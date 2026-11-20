@@ -211,18 +211,19 @@ with tab_rt:
         "A separate process plays the organisation's log pipeline and appends events to a log file "
         "(one simulated working day per tick). The scorer tails that file, rebuilds each user's features "
         "over a 30-day sliding window, scores them with the selected model and raises an alert when risk "
-        "crosses 70. Risk is on an absolute scale learned from the training population, so quiet users stay "
-        "low. This is micro-batch (seconds of delay), not per-event streaming."
+        "crosses the threshold. Risk is on an absolute scale learned from the training population, so quiet "
+        "users stay low. Speed and threshold can be changed while the stream is running."
     )
-    r1, r2, r3 = st.columns(3)
+    r1, r2, r3, r4 = st.columns(4)
     rt_users = ld.create_live_cohort(n=12, seed=123).user_id.tolist()
     rt_user = r1.selectbox("Insider to attack", rt_users, index=2, key="rt_user")
     rt_scen = r2.selectbox("Attack scenario", SCENARIOS, index=1, key="rt_scen")
-    rt_interval = r3.slider("Seconds per simulated day", 0.5, 5.0, 1.5, 0.5, key="rt_interval")
-    b1, b2, b3 = st.columns(3)
-    if b1.button("Start stream", type="primary", key="rt_start"):
+    rt_interval = r3.slider("Seconds per simulated day", 0.2, 5.0, 1.5, 0.1, key="rt_interval")
+    rt_thr = r4.slider("Alert threshold", 40, 95, 70, 5, key="rt_thr")
+    b1, b2, b3, b4 = st.columns(4)
+    if b1.button("Start stream", type="primary", key="rt_start", width="stretch"):
         _start_stream(rt_interval)
-    if b2.button("Inject attack now", key="rt_inject"):
+    if b2.button("Inject attack now", key="rt_inject", width="stretch"):
         rt = st.session_state.get("rt")
         if rt and not rt["done"]:
             with open(os.path.join(rt["dir"], "control.json"), "w", encoding="utf-8") as f:
@@ -230,13 +231,31 @@ with tab_rt:
             st.toast(f"Attack `{rt_scen}` will be injected for {rt_user} on the next simulated day")
         else:
             st.warning("Start the stream first.")
-    if b3.button("Stop", key="rt_stop"):
+    _rt0 = st.session_state.get("rt")
+    _paused = bool(_rt0 and os.path.exists(os.path.join(_rt0["dir"], "pause")))
+    if b3.button("Resume" if _paused else "Pause", key="rt_pause", width="stretch"):
+        if _rt0 and not _rt0["done"]:
+            pp = os.path.join(_rt0["dir"], "pause")
+            if _paused:
+                os.remove(pp)
+            else:
+                open(pp, "w").close()
+            st.rerun()
+    if b4.button("Stop", key="rt_stop", width="stretch"):
         _stop_stream()
         if st.session_state.get("rt"):
             st.session_state["rt"]["done"] = True
 
     rt_state = st.session_state.get("rt")
     rt_running = bool(rt_state and not rt_state["done"])
+    if rt_running:  # live controls: speed (producer reads the file each tick) and alert threshold
+        try:
+            with open(os.path.join(rt_state["dir"], "interval"), "w", encoding="utf-8") as f:
+                f.write(str(rt_interval))
+        except OSError:
+            pass
+        rt_state["scorer"].threshold = float(rt_thr)
+        rt_state["scorer"].rearm_below = float(rt_thr) - 20.0
 
     def _rt_panel():
         rt = st.session_state.get("rt")
@@ -254,23 +273,54 @@ with tab_rt:
             return
         alerts = scorer.alerts
         truth_users = {t["user"] for t in scorer.truth}
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Tick", state["tick"])
-        m2.metric("Simulated date", str(state["sim_date"]))
-        m3.metric("Events ingested", f"{scorer.n_events:,}")
-        m4.metric("Last alert latency", f"{alerts[-1]['latency_s']:.2f} s" if alerts else "-")
-        st.caption(f"Status: {'STREAMING' if not rt['done'] else 'STREAM ENDED'} - model: {rt['model']}")
+        paused = os.path.exists(os.path.join(rt["dir"], "pause"))
+        status = "STREAM ENDED" if rt["done"] else ("PAUSED" if paused else "STREAMING")
+        st.markdown(f"**Status: {status}** &nbsp;|&nbsp; model: {rt['model']} &nbsp;|&nbsp; threshold: {scorer.threshold:.0f}")
+        lat = scorer.latency_stats()
+        m = st.columns(6)
+        m[0].metric("Tick", state["tick"])
+        m[1].metric("Simulated day", pd.Timestamp(state["sim_date"]).strftime("%d %b"))
+        m[2].metric("Events ingested", f"{scorer.n_events:,}")
+        m[3].metric("Throughput", f"{scorer.throughput():.0f} ev/s")
+        m[4].metric("Active alerts", state.get("active_alerts", 0))
+        m[5].metric("Latency p95", "-" if lat["p50"] is None else f"{lat['p95']:.2f} s",
+                    help="Time from the producer writing a batch to the scorer finishing it. "
+                         + ("" if lat["p50"] is None else f"Median {lat['p50']:.2f} s, worst {lat['max']:.2f} s."))
 
         hist = scorer.history_df()
         top = state["risk_table"].user_id.head(4).tolist()
         cols = list(dict.fromkeys(top + ([rt_user] if rt_user in hist.columns else [])))
-        st.altair_chart(charts.risk_timeseries(hist[cols], rt_user, alerts), width="stretch")
-        st.dataframe(state["risk_table"].head(8).rename(columns={"user_id": "User", "anomaly_score": "Raw score", "risk_score": "Risk (0-100)"}),
-                     width="stretch", hide_index=True)
-        for a in reversed(alerts[-5:]):
-            tag = "matches the injected attack" if a["user_id"] in truth_users else "NOT an injected attack (false alarm)"
-            st.error(f"ALERT: {a['user_id']} risk {a['risk_score']:.0f}/100 on simulated day {a['sim_date']} "
-                     f"(tick {a['tick']}), raised {a['latency_s']:.2f}s after the logs were written - {tag}")
+        left, right = st.columns([2, 1])
+        left.altair_chart(charts.risk_timeseries(hist[cols], rt_user, alerts), width="stretch")
+        right.altair_chart(charts.live_leaderboard(state["risk_table"], scorer.threshold), width="stretch")
+        hl, hr = st.columns([2, 1])
+        hm = charts.risk_heatmap(hist)
+        if hm is not None:
+            hl.altair_chart(hm, width="stretch")
+        lc = charts.latency_chart(scorer.tick_stats)
+        if lc is not None:
+            hr.altair_chart(lc, width="stretch")
+
+        for a in alerts[-3:][::-1]:
+            hit = a["user_id"] in truth_users
+            st.error(f"ALERT: {a['user_id']} flagged HIGH RISK on simulated day {a['tick']} (risk {a['risk_score']:.0f}/100, "
+                     f"detected in {a['latency_s']:.2f} s) - "
+                     + ("matches the injected attack" if hit else "no injected attack for this user (possible false alarm)"))
+
+        al, fd = st.columns([1.3, 1])
+        with al:
+            st.markdown("**Alert log**")
+            if alerts:
+                log = pd.DataFrame([{"Day": a["sim_date"], "Tick": a["tick"], "User": a["user_id"], "Risk": round(a["risk_score"]),
+                                     "Latency (s)": a["latency_s"], "Top drivers": a.get("drivers", ""),
+                                     "Injected attack": "yes" if a["user_id"] in truth_users else "no (false alarm)"}
+                                    for a in reversed(alerts)])
+                st.dataframe(log, hide_index=True, width="stretch", height=240)
+            else:
+                st.caption("No alerts yet.")
+        with fd:
+            st.markdown("**Live event feed (newest first)**")
+            st.dataframe(scorer.feed_df(15), hide_index=True, width="stretch", height=240)
 
     st.fragment(run_every=1.0 if rt_running else None)(_rt_panel)()
 
