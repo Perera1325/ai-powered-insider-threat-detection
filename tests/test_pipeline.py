@@ -1,5 +1,6 @@
 """Generator / injector / feature-builder behaviour, incl. reproducibility."""
 import hashlib
+import pandas as pd
 import tempfile
 
 import generate_logs as gl
@@ -41,3 +42,27 @@ def test_after_hours_injection_changes_after_hours_feature():
     normal = preview[~preview.is_malicious.fillna(False).astype(bool)]
     assert len(ah) >= 1
     assert ah.after_hours_logon_count.min() > normal.after_hours_logon_count.median()
+
+
+def test_upload_analysis_roundtrip_matches_builtin_features():
+    import glob, os
+    import numpy as np
+    import upload_analysis as ua
+    d = "data/processed/full"
+    files = {n: open(f"{d}/{n}", "rb").read() for n in ["logon.csv", "device.csv", "http.csv", "email.csv", "file.csv", "users.csv"]}
+    feats, msgs = ua.prepare(files)
+    ref = pd.read_csv(f"{d}/user_features.csv").set_index("user_id")
+    assert list(feats.columns[1:]) == ua.FEATURE_COLUMNS
+    assert np.allclose(feats.drop(columns="user_id").values, ref.loc[feats.user_id].values, atol=1e-6)
+
+
+def test_upload_analysis_rejects_bad_files():
+    import pytest
+    import upload_analysis as ua
+    with pytest.raises(ValueError):
+        ua.prepare({"logon.csv": b"a,b\n1,2\n"})
+    with pytest.raises(ValueError):
+        ua.prepare({})
+    small = "user_id," + ",".join(ua.FEATURE_COLUMNS) + "\nU1," + ",".join("1" for _ in ua.FEATURE_COLUMNS) + "\n"
+    with pytest.raises(ValueError):
+        ua.prepare({"features.csv": small.encode()})

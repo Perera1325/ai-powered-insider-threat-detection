@@ -31,6 +31,7 @@ sys.path.insert(0, "src")
 import dashboard_utils as du
 import live_demo as ld
 import network_view as nv
+import upload_analysis as ua
 from realtime.scorer import RealTimeScorer, risk_from_scores
 from inject_anomalies import SCENARIOS
 import ui_theme
@@ -117,8 +118,8 @@ with st.sidebar:
         "and exist only to validate the models. A production deployment would not have them."
     )
 
-tab_alerts, tab_rt, tab_live, tab_graph, tab_models = st.tabs(
-    ["Alert queue", "Real-time monitor", "Attack simulation", "Entity graph", "Model evaluation"]
+tab_alerts, tab_rt, tab_live, tab_graph, tab_models, tab_upload = st.tabs(
+    ["Alert queue", "Real-time monitor", "Attack simulation", "Entity graph", "Model evaluation", "Upload & analyse"]
 )
 
 with tab_alerts:
@@ -412,3 +413,78 @@ with tab_models:
         st.caption("Right panel: detection quality as the injected attack is weakened (low-and-slow insiders). See docs/robust_evaluation.md.")
     except FileNotFoundError:
         st.info("Run `python3 src/robust_evaluation.py` to generate the multi-seed evaluation.")
+
+
+@st.cache_data(show_spinner=False, max_entries=4)
+def _ingest_upload(payload):
+    """payload: tuple of (file name, bytes). Cached so re-runs do not re-parse the files."""
+    return ua.prepare({n: b for n, b in payload})
+
+
+@st.cache_data(show_spinner=False)
+def _sample_bytes(name):
+    with open(os.path.join(ROOT, du.DATA_DIR, name), "rb") as f:
+        return f.read()
+
+
+with tab_upload:
+    st.subheader("Analyse your own log files")
+    st.caption(
+        "Upload CSV logs and get the same risk ranking and explanations as the demo dataset. Nothing is stored: "
+        "files are processed in memory for this session only. Do not upload real personal data to a public demo."
+    )
+    with st.expander("File format and sample files", expanded=False):
+        st.markdown(
+            "- **Raw logs** (any of them): `logon.csv` (user_id, pc, activity, timestamp), `device.csv` (user_id, pc, activity, timestamp), "
+            "`http.csv` (user_id, pc, url, timestamp), `email.csv` (user_id, to, external, size_kb, attachments, timestamp), "
+            "`file.csv` (user_id, pc, filename, action, timestamp); optional `users.csv` (user_id, ...).\n"
+            "- **or one feature table:** `features.csv` with `user_id` plus the 28 feature columns.\n"
+            f"- At least **{ua.MIN_USERS} users** are needed so that normal behaviour can be learned. "
+            "File names must contain the log type (e.g. `my_logon_week1.csv`)."
+        )
+        cols = st.columns(6)
+        for col, fname in zip(cols, ["logon.csv", "device.csv", "http.csv", "email.csv", "file.csv", "users.csv"]):
+            col.download_button(f"Sample {fname}", _sample_bytes(fname), file_name=fname, mime="text/csv", key=f"dl_{fname}")
+        st.download_button("Sample features.csv (28 columns)", _sample_bytes("user_features.csv"),
+                           file_name="features.csv", mime="text/csv", key="dl_features")
+    uploads = st.file_uploader("Drop CSV files here (you can select several)", type=["csv"], accept_multiple_files=True)
+    up_model = st.selectbox("Detection model for uploaded data", du.MODEL_CHOICES, index=0, key="up_model")
+    if not uploads:
+        st.info("No files uploaded yet. Download the sample files above, change them if you like, and upload them here.")
+    else:
+        try:
+            up_feats, up_msgs = _ingest_upload(tuple((f.name, f.getvalue()) for f in uploads))
+        except ValueError as err:
+            st.error(str(err))
+            up_feats = None
+        if up_feats is not None:
+            for m in up_msgs:
+                st.warning(m)
+            up_X, up_cols, _, _ = du.get_feature_matrix(up_feats)
+            up_models = du.LazyModels(up_X)
+            with st.spinner(f"Scoring {len(up_feats)} users with {up_model}..."):
+                res = ua.results_table(up_feats, up_models, up_model, up_X, du)
+            k1, k2, k3, k4 = st.columns(4)
+            k1.metric("Users analysed", len(res))
+            k2.metric("High risk", int((res.risk_level == "High").sum()))
+            k3.metric("Medium risk", int((res.risk_level == "Medium").sum()))
+            k4.metric("Highest risk", f"{res.risk_score.max():.1f}")
+            st.altair_chart(charts.risk_distribution(res), width="stretch")
+            st.markdown("**Ranked users**")
+            st.dataframe(
+                ui_theme.style_risk_table(res.head(30)[["rank", "user_id", "risk_score", "risk_level"]]),
+                hide_index=True, width="stretch",
+                column_config={"risk_score": st.column_config.ProgressColumn("Risk score", min_value=0, max_value=100, format="%.1f")},
+            )
+            st.download_button("Download full results (CSV)", res.to_csv(index=False).encode(),
+                               file_name="risk_results.csv", mime="text/csv")
+            up_uid = st.selectbox("Why was this user flagged?", res.user_id.head(30).tolist(), key="up_uid")
+            drivers = ua.top_drivers(up_feats, up_X, up_cols, up_uid)
+            st.markdown(
+                "**Strongest deviations from the population (z-score):** "
+                + ", ".join(f"`{k}` ({v:+.1f} s.d.)" for k, v in drivers.items())
+            )
+            if st.checkbox("Compute full SHAP / LIME explanation (slower)", key="up_shap"):
+                with st.spinner("Computing SHAP / LIME..."):
+                    s_, l_ = du.explain_user(up_models, up_model, up_X, up_cols, up_feats.user_id.values, up_uid, engine="library")
+                    st.pyplot(du.explanation_figure(s_, l_, up_uid))

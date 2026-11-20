@@ -56,3 +56,12 @@ def live_risk_chart(history, user, inject_tick):
                .mark_text(align="left", dx=5, dy=12, color="#92400E", fontSize=11, fontWeight="bold")
                .encode(x="x:Q", y=alt.value(4), text="t:N"))
     return _base_config((line + _threshold_layer("tick") + inj + inj_lbl).properties(height=280, title=f"{user} risk score during the live feed"))
+
+
+def risk_distribution(res):
+    """Histogram of risk scores for an uploaded population, with the alert threshold marked."""
+    bars = (alt.Chart(res).mark_bar(color="#2563EB", opacity=0.85)
+            .encode(x=alt.X("risk_score:Q", bin=alt.Bin(step=5), title="Risk score (0-100)"),
+                    y=alt.Y("count()", title="Users"), tooltip=["count()"]))
+    rule = alt.Chart(pd.DataFrame({"x": [THRESHOLD]})).mark_rule(color="#DC2626", strokeDash=[5, 4], size=1.4).encode(x="x:Q")
+    return _base_config((bars + rule).properties(height=220, title="Distribution of risk scores"))
