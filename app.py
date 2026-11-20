@@ -190,9 +190,13 @@ with tab_alerts:
 
     e1, e2, e3 = st.columns([1, 1, 2])
     e1.download_button("Download CSV", soc.alerts_csv(alert_df, cases), "alerts.csv", "text/csv", width="stretch")
-    e2.download_button("Download PDF report",
-                       soc.alerts_pdf(alert_df, cases, model_name, {u: _drivers(u) for u in alert_df.user_id}),
-                       "alert_report.pdf", "application/pdf", width="stretch")
+    try:
+        import reportlab  # noqa: F401
+        e2.download_button("Download PDF report",
+                           soc.alerts_pdf(alert_df, cases, model_name, {u: _drivers(u) for u in alert_df.user_id}),
+                           "alert_report.pdf", "application/pdf", width="stretch")
+    except ImportError:
+        e2.button("PDF export unavailable", disabled=True, width="stretch", help="Install reportlab to enable PDF export.")
     with e3.expander("Save / restore case log"):
         log = soc.cases_to_frame(cases)
         st.download_button("Download case log (CSV)", log.to_csv(index=False).encode("utf-8"), "case_log.csv", "text/csv",

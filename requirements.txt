@@ -14,3 +14,4 @@ matplotlib
 seaborn
 faker
 tabulate
+reportlab
