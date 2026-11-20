@@ -30,7 +30,7 @@ import streamlit as st
 sys.path.insert(0, "src")
 import dashboard_utils as du
 import live_demo as ld
-from pyvis_graph import build_pyvis_html
+import network_view as nv
 from realtime.scorer import RealTimeScorer, risk_from_scores
 from inject_anomalies import SCENARIOS
 import ui_theme
@@ -53,12 +53,12 @@ def _feature_matrix(_features):
     return du.get_feature_matrix(_features)
 
 
-@st.cache_data
-def _graph_html(focus_user, model_name, min_edge_weight, _models, _X, _features, _labels, _data):
+@st.cache_data(show_spinner=False)
+def _network_table(model_name, min_w, _models, _X, _features, _labels, _data):
     _, risk = du.score_users(_models, model_name, _X)
-    risk_by_user = dict(zip(_features.user_id, risk))
-    return build_pyvis_html(_full_graph(_data), risk_by_user, _labels, focus_user=focus_user or None,
-                            min_edge_weight=min_edge_weight)
+    G = _full_graph(_data)
+    tbl = nv.node_table(G, dict(zip(_features.user_id, risk)), _labels, min_w=min_w)
+    return tbl, nv.graph_stats(G, tbl, min_w=min_w)
 
 
 @st.cache_resource
@@ -344,19 +344,41 @@ with tab_live:
         )
 
 with tab_graph:
-    st.subheader("Interactive user-resource interaction graph (PyVis)")
+    st.subheader("Organisation network - users, departments and shared folders")
     st.caption(
-        "Node colour = risk score from the selected model (green = low, red = high); "
-        "dark outline = ground-truth insider (demo dataset only); squares = shared resources; "
-        "node size = degree. Drag, zoom and hover for details."
+        "Deterministic cluster layout (no animation): departments on a ring, shared folders in the centre. "
+        "Colour = risk (green low, red high); size = e-mail strength; black outline = ground-truth insider "
+        "(demo data only). Scroll to zoom, drag to pan, hover for metrics."
     )
-    min_links = st.slider("Minimum emails between two users to draw a link", 1, 15, 7,
-                          help="Lower = more links (denser, slower to lay out). 7 keeps the strongest ~5%.")
+    c1, c2, c3 = st.columns([1.2, 1.2, 1.6])
+    with c1:
+        min_links = st.slider("Minimum e-mails to draw a link", 1, 15, 7,
+                              help="Lower = more links. 7 keeps the strongest ~5% of user-user links.")
+    with c2:
+        label_thr = st.slider("Label users with risk at or above", 0, 100, 50)
     focus_options = ["(whole organisation)"] + data["features"].user_id.tolist()
-    focus_choice = st.selectbox("Focus on one user and their direct contacts", focus_options, index=0)
-    focus_user = "" if focus_choice == focus_options[0] else focus_choice
-    html = _graph_html(focus_user, model_name, min_links, models, X, data["features"], data["labels"], data)
-    st.iframe(html, height=700)  # HTML is generated from the simulated dataset only (no user input)
+    with c3:
+        focus_choice = st.selectbox("Focus on one user and their direct contacts", focus_options, index=0)
+    focus_user = None if focus_choice == focus_options[0] else focus_choice
+    tbl, gstats = _network_table(model_name, min_links, models, X, data["features"], data["labels"], data)
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("Users", gstats["nodes"])
+    k2.metric("Links shown", gstats["edges"])
+    k3.metric("Density", f"{gstats['density']:.3f}")
+    k4.metric("Components", gstats["components"])
+    k5.metric("Dept modularity", f"{gstats['modularity']:.2f}",
+              help="Near 0 = e-mail traffic does not follow department boundaries.")
+    st.altair_chart(nv.network_chart(_full_graph(data), tbl, min_w=min_links, label_risk=label_thr, focus=focus_user),
+                    width="stretch")
+    left, right = st.columns([1.1, 1])
+    with left:
+        st.altair_chart(nv.risk_vs_strength_chart(tbl, gstats["spearman_risk_strength"]), width="stretch")
+        st.caption("Risk is not explained by how much a user e-mails (rho near 0): the models flag behaviour, "
+                   "not network position - which is why the graph is context for an analyst, not a detector.")
+    with right:
+        st.markdown("**Top users by risk - network metrics**")
+        top = tbl.sort_values("risk", ascending=False).head(10)[["user", "department", "risk", "strength", "betweenness", "scenario"]]
+        st.dataframe(top.round(3), hide_index=True, width="stretch")
     with st.expander("Static graph + centrality note"):
         st.image(
             "docs/figures/user_resource_graph.png",

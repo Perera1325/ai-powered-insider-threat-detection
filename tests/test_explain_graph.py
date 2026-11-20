@@ -71,3 +71,18 @@ def test_pyvis_html_is_self_contained_and_marks_insiders(data, matrix):
     assert len(nodes) == 1 + 4 + 12                         # the user + 4 shared folders + 12 strongest contacts
     assert len(edges) == 16 and all("U0027" in (e["from"], e["to"]) for e in edges)  # a star
     assert '"label": "U0027"' in focused
+
+
+def test_network_view_builds_and_is_deterministic(data, matrix):
+    import network_view as nv
+    G = du.build_full_graph(data)
+    risk = {u: float(i % 100) for i, u in enumerate(data["users"].user_id)}
+    t1 = nv.node_table(G, risk, data["labels"])
+    t2 = nv.node_table(G, risk, data["labels"])
+    assert t1.equals(t2) and len(t1) == len(data["users"])
+    assert nv.layout(G)[0] == nv.layout(G)[0]
+    stats = nv.graph_stats(G, t1)
+    assert 0 < stats["density"] < 1 and stats["nodes"] == len(t1)
+    nv.network_chart(G, t1).to_dict()
+    nv.network_chart(G, t1, focus="U0027").to_dict()
+    nv.risk_vs_strength_chart(t1, stats["spearman_risk_strength"]).to_dict()
