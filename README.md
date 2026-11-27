@@ -47,13 +47,27 @@ The sidebar sets the **detection model** and how many alerts to show. Every tab 
 
 | Tab | What it does |
 |---|---|
-| **Alert queue** | Ranked risk table. Click a row to open that user, read the SHAP / LIME explanation and the user's resource neighbourhood, set a **case status** (New, Investigating, Escalated, Closed) with an analyst note, and export the queue as **CSV or PDF**. Case logs can be saved and restored as CSV. |
+| **Alert queue** | Ranked risk table. Click a row to open that user, read the SHAP / LIME explanation and the user's resource neighbourhood, set a **case status** (New, Investigating, Escalated, Closed) with an analyst note, and export the queue as **CSV or PDF**. Cases are **saved to a SQLite database** (they survive a page refresh) and can also be exported/restored as CSV. Each alert shows suggested **MITRE ATT&CK** techniques. |
 | **Investigate** | One page per entity: daily activity timeline, most unusual behaviours (z-scores), comparison with the user's department, model explanation, network neighbourhood and the case record. |
 | **Real-time monitor** | A separate process streams log events; the scorer tails them, rebuilds each user's features over a 30-day sliding window and raises alerts. Live KPIs, risk leaderboard, heat map, pipeline latency, alert log with top drivers and an event feed. Pause, resume, change the speed or the threshold while it runs, and inject an attack on demand. |
 | **Attack simulation** | Scripted demo: pick a user and a scenario, start the feed and watch that user's risk jump the moment the attack is injected. |
 | **Entity graph** | Deterministic (non-animated) organisation graph coloured by risk, with network statistics and a focus mode for one user and their contacts. |
 | **Model evaluation** | Do the models agree (top-k overlap and consensus alerts)? **Threshold simulator** (precision, recall, false alarms and analyst workload as you move the threshold), plus the Day 4 and multi-seed evaluation results. |
 | **Upload & analyse** | Bring your own data: upload logon / device / http / email / file logs (and optionally users) or a ready-made feature table, then score it with the selected model. |
+| **MITRE ATT&CK** | Maps each alert's strongest behavioural deviations to ATT&CK techniques (heuristic investigation hints): coverage per technique, one user's evidence, and a validation check against the synthetic answer key. |
+| **Notifications & audit** | Feed of real-time alerts and escalated cases (optionally also pushed to a Slack-style webhook). Administrators also see the audit log: sign-ins, case changes, exports and stream control. |
+
+### Sign-in and roles
+
+The dashboard asks for a login. Demo accounts (shown on the login page): `admin / admin123`, `analyst / analyst123`, `viewer / viewer123`.
+
+| Role | Can do |
+|---|---|
+| viewer | Read everything except the audit log; cannot change cases, export, or control the stream |
+| analyst | Everything a viewer can, plus case updates, exports, stream and attack controls |
+| admin | Everything, plus the audit log, restoring a case log and test notifications |
+
+For a real deployment set your own accounts in `.streamlit/secrets.toml` (`[users.alice]` with `password` or a `password_hash` from `auth.hash_password`, and `role`), set `webhook_url` for push alerts, and set `ITD_SHOW_DEMO_LOGINS=off`. `ITD_AUTH=off` disables the login for local development. The demo accounts are for demonstration only.
 
 ### Try this in a demo (3 minutes)
 
@@ -117,6 +131,10 @@ Details, the low-and-slow stress test and caveats: [docs/robust_evaluation.md](d
 
 ## Limitations (read these)
 
+- **Saved cases** live in a local SQLite file (`data/runtime/itd.db`). On Streamlit Community Cloud the disk is reset when the app is rebuilt, so export the case log CSV for a durable copy.
+- **Login** is a demo-grade gate (hashed passwords, roles, session lockout); it is not a replacement for single sign-on.
+- **ATT&CK mapping** is heuristic (feature to technique) and only suggests where to look.
+
 - **Synthetic data.** Results show the method works on this generator; they are not a claim about real organisations.
 - **Ground truth is used only for evaluation.** The *Threshold simulator* and the "ground truth" columns use the dataset's answer key. A production system would not have them, so treat the simulator as a tuning aid for the demo data.
 - **Case records live in the browser session.** Use *Download case log* / *Restore a saved case log* to keep them; hosted apps forget them on restart.
@@ -174,7 +192,7 @@ settings*; the dependencies come from `requirements.txt`.
 ## Repository layout
 
 ```
-app.py                       Streamlit dashboard (7 tabs)
+app.py                       Streamlit dashboard (9 tabs)
 requirements.txt             runtime dependencies (used by the hosted app)
 requirements-dev.txt         + TensorFlow (Keras autoencoder) and pytest
 src/
@@ -190,6 +208,10 @@ src/
   realtime/                  event_producer.py (log stream) and scorer.py (sliding-window scoring)
   dashboard_utils.py         testable core logic behind the dashboard
   soc_tools.py               case management, drill-down, threshold sweep, model agreement, CSV/PDF export
+  mitre.py                   MITRE ATT&CK mapping (scenarios, features, coverage, validation)
+  case_store.py              SQLite store for cases, audit log and notifications
+  auth.py                    PBKDF2 password hashing, roles and permissions
+  notify.py                  alert notifications (feed + optional https webhook)
   network_view.py            deterministic network graph and statistics
   upload_analysis.py         schema checks and features for user-uploaded data
   charts.py, ui_theme.py     blue/white chart and page styling

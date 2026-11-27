@@ -33,6 +33,10 @@ import live_demo as ld
 import network_view as nv
 import upload_analysis as ua
 import soc_tools as soc
+import auth
+import case_store as cs
+import mitre
+import notify
 from realtime.scorer import RealTimeScorer, risk_from_scores
 from inject_anomalies import SCENARIOS
 import ui_theme
@@ -43,6 +47,74 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 st.set_page_config(page_title="Insider Threat Detection | SOC Console", page_icon="🛡️", layout="wide")
 st.markdown(ui_theme.CSS, unsafe_allow_html=True)
 ui_theme.apply_matplotlib_theme()
+
+
+def _secret(name, default=None):
+    try:
+        return st.secrets[name]
+    except Exception:  # no secrets file / key missing
+        return default
+
+
+def _configured_users():
+    users = auth.normalise_users(_secret("users") and {k: dict(v) for k, v in dict(_secret("users")).items()})
+    return users or auth.demo_users()
+
+
+def _db(fn, *args, **kwargs):
+    """Run a persistence call; a read-only or broken disk must never take the dashboard down."""
+    try:
+        return fn(*args, **kwargs)
+    except Exception:
+        st.session_state["db_ok"] = False
+        return None
+
+
+def _login_gate():
+    if not auth.auth_enabled():
+        st.session_state.setdefault("user", {"name": "local", "role": "admin"})
+        return
+    if "user" in st.session_state:
+        return
+    _, mid, _ = st.columns([1, 1.2, 1])
+    with mid:
+        st.markdown('<div class="brand"><div class="logo">IT</div><div><div class="name">Insider Threat</div>'
+                    '<div class="sub">Detection console - sign in</div></div></div>', unsafe_allow_html=True)
+        failed = st.session_state.get("failed_logins", 0)
+        with st.form("login"):
+            name = st.text_input("Username")
+            pw = st.text_input("Password", type="password")
+            go = st.form_submit_button("Sign in", type="primary", width="stretch")
+        if go:
+            if failed >= auth.MAX_FAILED:
+                st.error("Too many failed attempts in this session. Reload the page to try again.")
+            else:
+                role = auth.authenticate(name.strip(), pw, _configured_users())
+                if role:
+                    st.session_state["user"] = {"name": name.strip(), "role": role}
+                    st.session_state["failed_logins"] = 0
+                    _db(cs.log_audit, name.strip(), role, "login", "success")
+                    st.rerun()
+                st.session_state["failed_logins"] = failed + 1
+                _db(cs.log_audit, name.strip() or "?", "-", "login_failed", f"attempt {failed + 1}")
+                st.error("Wrong username or password.")
+        if auth.demo_logins_visible() and not _secret("users"):
+            st.info("**Demo accounts** - admin / admin123, analyst / analyst123, viewer / viewer123. "
+                    "Roles: *viewer* is read-only, *analyst* can work cases and export, *admin* also sees the audit log.")
+    st.stop()
+
+
+_login_gate()
+USER = st.session_state["user"]["name"]
+ROLE = st.session_state["user"]["role"]
+
+
+def _can(action):
+    return auth.can(ROLE, action)
+
+
+def _audit(action, detail=""):
+    _db(cs.log_audit, USER, ROLE, action, detail)
 
 
 @st.cache_data
@@ -101,6 +173,13 @@ with st.sidebar:
         '<div class="sub">Detection console</div></div></div>',
         unsafe_allow_html=True,
     )
+    st.markdown(f"**{USER}** &nbsp; <span class='chip'>{ROLE}</span>", unsafe_allow_html=True)
+    if auth.auth_enabled() and st.button("Sign out", key="logout", width="stretch"):
+        _audit("logout")
+        for k in ("user", "cases", "rt"):
+            st.session_state.pop(k, None)
+        st.rerun()
+    st.divider()
     st.subheader("Detection settings")
     model_name = st.selectbox("Detection model", du.MODEL_CHOICES, index=0)
     top_k = st.slider("Number of alerts to show", min_value=5, max_value=30, value=15)
@@ -120,7 +199,8 @@ with st.sidebar:
     )
 
 
-st.session_state.setdefault("cases", soc.new_case_store())
+if "cases" not in st.session_state:
+    st.session_state["cases"] = _db(cs.load_store) or soc.new_case_store()
 
 
 def _case_panel(uid, key):
@@ -129,10 +209,16 @@ def _case_panel(uid, key):
     cur = soc.case_status(store, uid)
     st.markdown(f"**Case for {uid}** &nbsp; current status: `{cur}`")
     c1, c2 = st.columns([1, 2])
-    new_status = c1.selectbox("Status", soc.STATUSES, index=soc.STATUSES.index(cur), key=f"{key}_status_{uid}")
-    note = c2.text_input("Analyst note", key=f"{key}_note_{uid}", placeholder="What did you check? What is the outcome?")
-    if st.button("Save case update", key=f"{key}_save_{uid}"):
-        soc.update_case(store, uid, new_status, note)
+    writable = _can("case_write")
+    new_status = c1.selectbox("Status", soc.STATUSES, index=soc.STATUSES.index(cur), key=f"{key}_status_{uid}", disabled=not writable)
+    note = c2.text_input("Analyst note", key=f"{key}_note_{uid}", placeholder="What did you check? What is the outcome?", disabled=not writable)
+    if not writable:
+        st.caption(f"Your role ({ROLE}) is read-only. Ask an analyst or admin to update cases.")
+    if st.button("Save case update", key=f"{key}_save_{uid}", disabled=not writable):
+        soc.update_case(store, uid, new_status, note, analyst=USER)
+        _db(cs.add_case_entry, uid, new_status, note, USER)
+        _audit("case_update", f"{uid} -> {new_status}")
+        _db(notify.notify_case, uid, new_status, USER, note, _secret("webhook_url"))
         st.toast(f"{uid}: {new_status}")
         st.rerun()
     hist = store.get(uid, {}).get("history", [])
@@ -140,13 +226,21 @@ def _case_panel(uid, key):
         st.dataframe(pd.DataFrame(hist)[["time", "status", "analyst", "note"]].iloc[::-1], hide_index=True, width="stretch", height=150)
 
 
+@st.cache_data(show_spinner=False)
+def _attack_matches(uids):
+    """ATT&CK techniques suggested by each user's strongest feature deviations (heuristic)."""
+    return mitre.user_matches(data["features"], uids, feature_cols, soc.feature_deviations)
+
+
 def _drivers(uid, n=3):
     dev = soc.feature_deviations(data["features"], uid, feature_cols, n)
     return ", ".join(f"{r.feature} ({r.z_score:+.1f} sd)" for r in dev.itertuples())
 
 
-tab_alerts, tab_inv, tab_rt, tab_live, tab_graph, tab_models, tab_upload = st.tabs(
-    ["Alert queue", "Investigate", "Real-time monitor", "Attack simulation", "Entity graph", "Model evaluation", "Upload & analyse"]
+(tab_alerts, tab_inv, tab_rt, tab_live, tab_graph, tab_models, tab_upload,
+ tab_attack, tab_notif) = st.tabs(
+    ["Alert queue", "Investigate", "Real-time monitor", "Attack simulation", "Entity graph", "Model evaluation",
+     "Upload & analyse", "MITRE ATT&CK", "Notifications & audit"]
 )
 
 with tab_alerts:
@@ -158,6 +252,9 @@ with tab_alerts:
 
     cases = st.session_state["cases"]
     alert_cases = soc.with_case_columns(alert_df, cases)
+    _m = _attack_matches(tuple(alert_df.user_id))
+    alert_cases["attack"] = alert_cases.user_id.map(
+        lambda u: ", ".join(_m[u].technique.head(2)) if len(_m[u]) else "-")
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("Users monitored", len(data["features"]))
     col2.metric("Alerts shown", len(alert_df))
@@ -166,10 +263,10 @@ with tab_alerts:
     col5.metric("Confirmed insiders in queue", int(alert_df.is_malicious.sum()))
 
     st.subheader(f"Top {top_k} alerts - {model_name}")
-    st.caption("Click a row to open it below. Case status and notes are kept for this session; export or import them as CSV.")
+    st.caption("Click a row to open it below. Case status and notes are saved to the database (see the Notifications & audit tab); export them as CSV for a durable copy.")
     sel = st.dataframe(
         ui_theme.style_risk_table(
-            alert_cases[["rank", "user_id", "risk_score", "risk_level", "case_status", "is_malicious", "scenario"]]
+            alert_cases[["rank", "user_id", "risk_score", "risk_level", "case_status", "attack", "is_malicious", "scenario"]]
         ),
         width="stretch",
         hide_index=True,
@@ -182,6 +279,7 @@ with tab_alerts:
             "risk_score": st.column_config.ProgressColumn("Risk score", min_value=0, max_value=100, format="%.1f"),
             "risk_level": st.column_config.TextColumn("Severity", width="small"),
             "case_status": st.column_config.TextColumn("Case status"),
+            "attack": st.column_config.TextColumn("ATT&CK (suggested)"),
             "is_malicious": st.column_config.CheckboxColumn("Ground truth: insider", width="small"),
             "scenario": st.column_config.TextColumn("Injected scenario"),
         },
@@ -189,21 +287,26 @@ with tab_alerts:
     picked = sel.selection.rows[0] if sel.selection.rows else 0
 
     e1, e2, e3 = st.columns([1, 1, 2])
-    e1.download_button("Download CSV", soc.alerts_csv(alert_df, cases), "alerts.csv", "text/csv", width="stretch")
+    _can_export = _can("export")
+    e1.download_button("Download CSV", soc.alerts_csv(alert_df, cases), "alerts.csv", "text/csv", width="stretch",
+                       disabled=not _can_export, on_click=_audit, args=("export", "alerts.csv"))
     try:
         import reportlab  # noqa: F401
         e2.download_button("Download PDF report",
                            soc.alerts_pdf(alert_df, cases, model_name, {u: _drivers(u) for u in alert_df.user_id}),
-                           "alert_report.pdf", "application/pdf", width="stretch")
+                           "alert_report.pdf", "application/pdf", width="stretch",
+                           disabled=not _can_export, on_click=_audit, args=("export", "alert_report.pdf"))
     except ImportError:
         e2.button("PDF export unavailable", disabled=True, width="stretch", help="Install reportlab to enable PDF export.")
     with e3.expander("Save / restore case log"):
         log = soc.cases_to_frame(cases)
         st.download_button("Download case log (CSV)", log.to_csv(index=False).encode("utf-8"), "case_log.csv", "text/csv",
-                           disabled=log.empty)
-        up = st.file_uploader("Restore a saved case log", type="csv", key="case_upload")
-        if up is not None and st.button("Load case log", key="case_load"):
+                           disabled=log.empty or not _can_export, on_click=_audit, args=("export", "case_log.csv"))
+        up = st.file_uploader("Restore a saved case log (admin only)", type="csv", key="case_upload", disabled=not _can("admin"))
+        if up is not None and st.button("Load case log", key="case_load", disabled=not _can("admin")):
             st.session_state["cases"] = soc.cases_from_frame(pd.read_csv(up))
+            _db(cs.replace_cases, st.session_state["cases"])
+            _audit("case_log_restored", f"{len(st.session_state['cases'])} entities")
             st.rerun()
 
     st.subheader("Explain an alert")
@@ -327,9 +430,14 @@ with tab_rt:
     rt_interval = r3.slider("Seconds per simulated day", 0.2, 5.0, 1.5, 0.1, key="rt_interval")
     rt_thr = r4.slider("Alert threshold", 40, 95, 70, 5, key="rt_thr")
     b1, b2, b3, b4 = st.columns(4)
-    if b1.button("Start stream", type="primary", key="rt_start", width="stretch"):
+    _sim = _can("simulate")
+    if not _sim:
+        st.caption(f"Your role ({ROLE}) can watch the stream but not control it.")
+    if b1.button("Start stream", type="primary", key="rt_start", width="stretch", disabled=not _sim):
         _start_stream(rt_interval)
-    if b2.button("Inject attack now", key="rt_inject", width="stretch"):
+        _audit("stream_start", f"model={model_name}")
+    if b2.button("Inject attack now", key="rt_inject", width="stretch", disabled=not _sim):
+        _audit("attack_injected", f"{rt_user} / {rt_scen}")
         rt = st.session_state.get("rt")
         if rt and not rt["done"]:
             with open(os.path.join(rt["dir"], "control.json"), "w", encoding="utf-8") as f:
@@ -339,7 +447,7 @@ with tab_rt:
             st.warning("Start the stream first.")
     _rt0 = st.session_state.get("rt")
     _paused = bool(_rt0 and os.path.exists(os.path.join(_rt0["dir"], "pause")))
-    if b3.button("Resume" if _paused else "Pause", key="rt_pause", width="stretch"):
+    if b3.button("Resume" if _paused else "Pause", key="rt_pause", width="stretch", disabled=not _sim):
         if _rt0 and not _rt0["done"]:
             pp = os.path.join(_rt0["dir"], "pause")
             if _paused:
@@ -347,7 +455,7 @@ with tab_rt:
             else:
                 open(pp, "w").close()
             st.rerun()
-    if b4.button("Stop", key="rt_stop", width="stretch"):
+    if b4.button("Stop", key="rt_stop", width="stretch", disabled=not _sim):
         _stop_stream()
         if st.session_state.get("rt"):
             st.session_state["rt"]["done"] = True
@@ -378,6 +486,13 @@ with tab_rt:
             st.info("Waiting for the first events...")
             return
         alerts = scorer.alerts
+        sent = rt.setdefault("notified", set())
+        for a in alerts:
+            k = (a["tick"], a["user_id"])
+            if k not in sent:
+                sent.add(k)
+                tech = ", ".join(mitre.technique_label(t) for t in mitre.from_driver_text(a.get("drivers", ""))[:2])
+                _db(notify.notify_alert, dict(a, stream=os.path.basename(rt["dir"])), tech, _secret("webhook_url"))
         truth_users = {t["user"] for t in scorer.truth}
         paused = os.path.exists(os.path.join(rt["dir"], "pause"))
         status = "STREAM ENDED" if rt["done"] else ("PAUSED" if paused else "STREAMING")
@@ -449,7 +564,7 @@ with tab_live:
     inject_at_tick = lc4.slider("Inject attack on day", min_value=2, max_value=n_ticks, value=min(6, n_ticks))
     speed = st.slider("Seconds per simulated day (demo pacing)", min_value=0.2, max_value=3.0, value=1.0, step=0.2)
 
-    start = st.button("Start Live Feed", type="primary")
+    start = st.button("Start Live Feed", type="primary", disabled=not _can("simulate"))
 
     if start:
         live_model = models[model_name]
@@ -691,3 +806,88 @@ with tab_upload:
                 with st.spinner("Computing SHAP / LIME..."):
                     s_, l_ = du.explain_user(up_models, up_model, up_X, up_cols, up_feats.user_id.values, up_uid, engine="library")
                     st.pyplot(du.explanation_figure(s_, l_, up_uid))
+
+
+# ------------------------------------------------------------------ MITRE ATT&CK
+with tab_attack:
+    st.subheader("MITRE ATT&CK view")
+    st.caption(
+        "Each alert's strongest behavioural deviations are mapped to MITRE ATT&CK techniques as investigation hints. "
+        "The mapping is heuristic (feature -> technique) and is *not* proof of a technique being used. "
+        "It is built from behaviour only, never from the ground-truth columns."
+    )
+    atk_df = _alert_table(model_name, top_k, data["features"], data["labels"], models, X)
+    atk_m = _attack_matches(tuple(atk_df.user_id))
+    cov = mitre.coverage_matrix({u: m.technique.tolist() for u, m in atk_m.items()})
+    hit, tot = mitre.agreement(atk_m, data["labels"])
+    a1, a2, a3 = st.columns(3)
+    a1.metric("Alerts analysed", len(atk_df))
+    a2.metric("Techniques observed", int((cov.users_flagged > 0).sum()))
+    a3.metric("Mapping check vs answer key", f"{hit}/{tot}" if tot else "-",
+              help="Of the known insiders in this queue, how many have a suggested technique that belongs to their injected scenario. "
+                   "Validation only: the answer key does not exist in production.")
+    st.markdown("**Coverage: users flagged per technique**")
+    st.dataframe(cov.assign(technique=cov.technique.map(mitre.technique_url)), hide_index=True, width="stretch",
+                 column_config={"tactic": "Tactic",
+                                "technique": st.column_config.LinkColumn("Technique", display_text=r"attack\.mitre\.org/techniques/(.*)/"),
+                                "name": "Name", "users_flagged": st.column_config.ProgressColumn("Users flagged", min_value=0, max_value=max(1, int(cov.users_flagged.max())), format="%d"),
+                                "users": "Users"})
+    st.markdown("**One user's evidence**")
+    pick = st.selectbox("User", atk_df.user_id.tolist(), key="atk_user")
+    ev = atk_m[pick]
+    if len(ev):
+        st.dataframe(ev.rename(columns={"technique": "Technique", "name": "Name", "tactic": "Tactic",
+                                        "evidence_score": "Evidence (sum |z|)", "features": "Supporting features"}),
+                     hide_index=True, width="stretch")
+    else:
+        st.info("No feature deviates enough (|z| >= 2) to suggest a technique for this user.")
+    with st.expander("Scenario reference: injected scenario -> ATT&CK"):
+        st.dataframe(pd.DataFrame([{"Scenario": k, "Techniques": ", ".join(mitre.technique_label(t) for t in v)}
+                                   for k, v in mitre.SCENARIO_MAP.items()]), hide_index=True, width="stretch")
+
+
+# ------------------------------------------------------------------ notifications and audit
+with tab_notif:
+    st.subheader("Notifications")
+    hook = notify.webhook_url(_secret("webhook_url"))
+    st.caption("Real-time alerts and escalated cases are posted to this feed. "
+               + ("A webhook is configured: alerts are also pushed to it." if hook else
+                  "No webhook is configured (set `webhook_url` in Streamlit secrets or ITD_WEBHOOK_URL to also push to Slack/Teams-style channels)."))
+    if st.session_state.get("db_ok") is False:
+        st.warning("The database could not be written on this machine, so cases and notifications are session-only.")
+    feed = _db(cs.notifications_frame)
+    n1, n2 = st.columns([3, 1])
+    n2.metric("Notifications", 0 if feed is None else len(feed))
+    if feed is not None and len(feed):
+        n1.dataframe(feed.rename(columns={"time": "Time", "severity": "Severity", "title": "Title", "message": "Details",
+                                          "user_id": "Entity", "source": "Source", "delivered": "Delivered"}),
+                     hide_index=True, width="stretch", height=260)
+        st.download_button("Download notifications (CSV)", feed.to_csv(index=False).encode("utf-8"), "notifications.csv", "text/csv",
+                           disabled=not _can("export"), on_click=_audit, args=("export", "notifications.csv"))
+    else:
+        n1.info("No notifications yet. Start the Real-time stream and inject an attack, or escalate a case.")
+
+    st.subheader("Audit log")
+    if not _can("admin"):
+        st.info("The audit log (sign-ins, case changes, exports, stream control) is visible to administrators.")
+    else:
+        t1, t2 = st.columns(2)
+        if t1.button("Send test notification", key="notif_test"):
+            ok = _db(cs.add_notification, "Test notification", f"Sent by {USER}", "Low", "", "admin", "feed",
+                     f"test:{cs._now()}")
+            if hook:
+                ok_h, info = notify.post_webhook(hook, f"Test notification from the Insider Threat console ({USER})")
+                st.toast(f"Webhook: {info}")
+            _audit("notification_test")
+            st.rerun()
+        if t2.button("Clear notification feed", key="notif_clear"):
+            _db(cs.clear_notifications)
+            _audit("notifications_cleared")
+            st.rerun()
+        audit = _db(cs.audit_frame)
+        if audit is not None and len(audit):
+            st.dataframe(audit, hide_index=True, width="stretch", height=300)
+            st.download_button("Download audit log (CSV)", audit.to_csv(index=False).encode("utf-8"), "audit_log.csv", "text/csv",
+                               on_click=_audit, args=("export", "audit_log.csv"))
+        else:
+            st.caption("No audit entries yet.")

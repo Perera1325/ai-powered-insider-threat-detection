@@ -29,8 +29,8 @@ def test_alert_metrics_present(app):
     assert app.metric[0].value == "100"
 
 
-def test_seven_tabs(app):
-    assert len(app.tabs) == 7
+def test_nine_tabs(app):
+    assert len(app.tabs) == 9
 
 
 def test_explanation_figure_rendered_for_selected_alert(app):

@@ -2,6 +2,9 @@ import os
 import sys
 
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+os.environ.setdefault("ITD_AUTH", "off")  # dashboard tests run without the login wall (auth has its own tests)
+import tempfile
+os.environ.setdefault("ITD_DB", os.path.join(tempfile.mkdtemp(prefix="itd_test_"), "itd.db"))
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)  # scripts use repo-relative paths
 sys.path.insert(0, os.path.join(ROOT, "src"))
