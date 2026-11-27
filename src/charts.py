@@ -178,3 +178,47 @@ def timeline_chart(long, injected_day=None):
         ds = pd.DataFrame({"date": [pd.Timestamp(injected_day)]})
         ch = ch + alt.Chart(ds).mark_rule(color=RED_C, strokeDash=[4, 4]).encode(x="date:T")
     return _base_config(ch.properties(height=230, title="Daily activity timeline"))
+
+
+def department_chart(dept):
+    """Stacked-free bar chart: high-risk users and mean risk per department."""
+    bars = (alt.Chart(dept).mark_bar(color="#2563EB", opacity=0.9)
+            .encode(y=alt.Y("department:N", sort=dept.department.tolist(), title=None, axis=alt.Axis(labelOverlap=False)),
+                    x=alt.X("mean_risk:Q", title="Mean risk (0-100)", scale=alt.Scale(domain=[0, 100])),
+                    tooltip=["department", "users", "mean_risk", "max_risk", "high_risk_users"]))
+    label = bars.mark_text(align="left", dx=4, color="#1B2433", fontSize=11).encode(
+        text=alt.Text("high_risk_users:Q", format="d"), color=alt.value("#1B2433"))
+    return _base_config((bars + label).properties(height=alt.Step(30), title="Mean risk by department (number = users above the threshold)"))
+
+
+def case_funnel_chart(funnel):
+    bars = (alt.Chart(funnel).mark_bar(color="#0891B2")
+            .encode(x=alt.X("status:N", sort=funnel.status.tolist(), title=None, axis=alt.Axis(labelAngle=-25, labelLimit=170, labelOverlap=False)),
+                    y=alt.Y("cases:Q", title="Cases", axis=alt.Axis(tickMinStep=1, format="d"),
+                            scale=alt.Scale(domain=[0, max(2, int(funnel.cases.max()))])), tooltip=["status", "cases"]))
+    return _base_config(bars.properties(height=220, title="Cases by status"))
+
+
+def psi_chart(drift, n=12):
+    t = drift.head(n).copy()
+    bars = (alt.Chart(t).mark_bar(size=14)
+            .encode(y=alt.Y("feature:N", sort=t.feature.tolist(), title=None, axis=alt.Axis(labelOverlap=False)),
+                    x=alt.X("psi:Q", title="Population Stability Index"),
+                    color=alt.Color("status:N", scale=alt.Scale(domain=["Stable", "Moderate", "Significant"],
+                                                                range=["#93C5FD", "#F59E0B", "#DC2626"]),
+                                    legend=alt.Legend(title=None)),
+                    tooltip=["feature", "psi", "status", "baseline_mean", "new_mean"]))
+    rules = alt.Chart(pd.DataFrame({"x": [0.10, 0.25]})).mark_rule(color="#64748B", strokeDash=[4, 4]).encode(x="x:Q")
+    return _base_config((bars + rules).properties(height=alt.Step(22), title="Feature drift against the baseline"))
+
+
+def consensus_chart(cons, n=12):
+    t = cons.head(n).copy()
+    bars = (alt.Chart(t).mark_bar(size=14)
+            .encode(y=alt.Y("user_id:N", sort=t.user_id.tolist(), title=None, axis=alt.Axis(labelOverlap=False)),
+                    x=alt.X("consensus:Q", title="Consensus risk (mean of models)", scale=alt.Scale(domain=[0, 100])),
+                    color=alt.Color("confidence:N", scale=alt.Scale(domain=["High", "Medium", "Low", "-"],
+                                                                    range=["#1E3A8A", "#3B82F6", "#93C5FD", "#CBD5E1"]),
+                                    legend=alt.Legend(title="Model agreement")),
+                    tooltip=["user_id", "consensus", "spread", "models_alerting", "confidence"]))
+    return _base_config(bars.properties(height=alt.Step(22), title="Consensus risk across models"))

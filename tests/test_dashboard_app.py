@@ -26,11 +26,11 @@ def test_alert_metrics_present(app):
     labels = [m.label for m in app.metric]
     for want in ("Users monitored", "Alerts shown", "High risk"):
         assert want in labels
-    assert app.metric[0].value == "100"
+    assert [m.value for m in app.metric if m.label == "Users monitored"] == ["100"]
 
 
-def test_nine_tabs(app):
-    assert len(app.tabs) == 9
+def test_twelve_tabs(app):
+    assert len(app.tabs) == 12
 
 
 def test_explanation_figure_rendered_for_selected_alert(app):

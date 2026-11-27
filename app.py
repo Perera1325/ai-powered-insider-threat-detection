@@ -37,6 +37,10 @@ import auth
 import case_store as cs
 import mitre
 import notify
+import playbook
+import risk_intel
+import executive
+from datetime import datetime
 from realtime.scorer import RealTimeScorer, risk_from_scores
 from inject_anomalies import SCENARIOS
 import ui_theme
@@ -237,10 +241,16 @@ def _drivers(uid, n=3):
     return ", ".join(f"{r.feature} ({r.z_score:+.1f} sd)" for r in dev.itertuples())
 
 
-(tab_alerts, tab_inv, tab_rt, tab_live, tab_graph, tab_models, tab_upload,
- tab_attack, tab_notif) = st.tabs(
-    ["Alert queue", "Investigate", "Real-time monitor", "Attack simulation", "Entity graph", "Model evaluation",
-     "Upload & analyse", "MITRE ATT&CK", "Notifications & audit"]
+@st.cache_data(show_spinner=False)
+def _all_model_risks(_models, _X, names):
+    return {m: du.score_users(_models, m, _X)[1] for m in names}
+
+
+(tab_exec, tab_alerts, tab_inv, tab_rt, tab_live, tab_graph, tab_models, tab_upload,
+ tab_attack, tab_notif, tab_play, tab_intel) = st.tabs(
+    ["Executive overview", "Alert queue", "Investigate", "Real-time monitor", "Attack simulation", "Entity graph",
+     "Model evaluation", "Upload & analyse", "MITRE ATT&CK", "Notifications & audit", "Response playbooks",
+     "Risk intelligence"]
 )
 
 with tab_alerts:
@@ -891,3 +901,142 @@ with tab_notif:
                                on_click=_audit, args=("export", "audit_log.csv"))
         else:
             st.caption("No audit entries yet.")
+
+
+# ------------------------------------------------------------------ executive overview
+with tab_exec:
+    st.subheader("Executive overview")
+    st.caption("One page for a manager: how many alerts, how the response is going and where the risk sits. "
+               "It follows the model and alert count chosen in the sidebar.")
+    ex_all = _alert_table(model_name, len(data["features"]), data["features"], data["labels"], models, X)
+    ex_scope = ex_all.head(top_k)
+    ex_cases = st.session_state["cases"]
+    ex_sla = playbook.sla_table(ex_scope, ex_cases)
+    ex_k = executive.executive_kpis(ex_scope, ex_cases, ex_sla)
+    ex_dept = risk_intel.department_risk(data["users"], ex_all.user_id, ex_all.risk_score)
+    x1, x2, x3, x4, x5 = st.columns(5)
+    x1.metric("High-severity alerts", ex_k["high"], help="Alerts with risk score of at least 70 in the current queue.")
+    x2.metric("High, not yet triaged", ex_k["untriaged_high"], help="High-severity alerts nobody has opened a case for.")
+    x3.metric("Open cases", ex_k["open_cases"])
+    x4.metric("SLA breached / at risk", f"{ex_k['sla_breached']} / {ex_k['sla_at_risk']}")
+    x5.metric("Mean time to resolve", "-" if ex_k["mttr_hours"] is None else f"{ex_k['mttr_hours']} h")
+    y1, y2 = st.columns(2)
+    with y1:
+        st.altair_chart(charts.department_chart(ex_dept), width="stretch")
+    with y2:
+        st.altair_chart(charts.case_funnel_chart(executive.case_funnel(ex_cases)), width="stretch")
+    st.markdown("**Highest-risk entities**")
+    ex_top = soc.with_case_columns(ex_scope, ex_cases).head(5)
+    _exm = _attack_matches(tuple(ex_top.user_id))
+    ex_top["suggested_technique"] = ex_top.user_id.map(lambda u: mitre.technique_label(_exm[u].technique.iloc[0]) if len(_exm[u]) else "-")
+    st.dataframe(ex_top[["rank", "user_id", "risk_score", "risk_level", "case_status", "suggested_technique"]],
+                 hide_index=True, width="stretch")
+    st.download_button("Download executive summary (Markdown)",
+                       executive.executive_summary(ex_k, ex_top, ex_dept, model_name).encode("utf-8"),
+                       "executive_summary.md", "text/markdown", disabled=not _can("export"),
+                       on_click=_audit, args=("export", "executive_summary.md"))
+
+
+# ------------------------------------------------------------------ response playbooks
+with tab_play:
+    st.subheader("Response playbooks and SLAs")
+    st.caption("Pick an alert to get a response checklist built from its severity and its suggested ATT&CK techniques. "
+               "The SLA clock starts at the first analyst action on the case. This is guidance for a human analyst; "
+               "the console never changes an account by itself.")
+    pb_alerts = _alert_table(model_name, top_k, data["features"], data["labels"], models, X)
+    pb_uid = st.selectbox("Alert", pb_alerts.user_id.tolist(), key="pb_uid")
+    pb_row = pb_alerts[pb_alerts.user_id == pb_uid].iloc[0]
+    pb_cases = st.session_state["cases"]
+    pb_match = _attack_matches((pb_uid,))[pb_uid]
+    pb_plan = playbook.build_playbook(pb_row.risk_level, pb_match.technique.tolist())
+    pb_sla = playbook.case_sla(pb_cases.get(pb_uid), pb_row.risk_level)
+    p1, p2, p3, p4 = st.columns(4)
+    p1.metric("Risk score", f"{pb_row.risk_score:.1f}/100")
+    p2.metric("Severity", pb_row.risk_level)
+    p3.metric("Case status", soc.case_status(pb_cases, pb_uid))
+    p4.metric("SLA", pb_sla["state"], help=f"{pb_sla['window_hours']} hours from the first analyst action."
+              + ("" if pb_sla["due"] is None else f" Due {pb_sla['due']:%Y-%m-%d %H:%M}."))
+    st.markdown("**Response checklist**")
+    st.dataframe(pb_plan.rename(columns={"step": "#", "phase": "Phase", "action": "Action", "owner": "Owner", "why": "Why"}),
+                 hide_index=True, width="stretch")
+    b1, b2 = st.columns(2)
+    if b1.button("Acknowledge and start case", key="pb_start", disabled=not _can("case_write")
+                 or soc.case_status(pb_cases, pb_uid) != "New",
+                 help="Sets the case to Investigating, which starts the SLA clock."):
+        soc.update_case(pb_cases, pb_uid, "Investigating", "Started from the response playbook", analyst=USER)
+        _db(cs.add_case_entry, pb_uid, "Investigating", "Started from the response playbook", USER)
+        _audit("case_update", f"{pb_uid} -> Investigating (playbook)")
+        st.toast(f"{pb_uid}: Investigating")
+        st.rerun()
+    pb_dev = soc.feature_deviations(data["features"], pb_uid, feature_cols, 5)
+    b2.download_button("Download incident brief (Markdown)",
+                       playbook.incident_brief(pb_uid, float(pb_row.risk_score), pb_row.risk_level,
+                                               soc.case_status(pb_cases, pb_uid), pb_match, pb_dev, pb_plan).encode("utf-8"),
+                       f"incident_brief_{pb_uid}.md", "text/markdown", disabled=not _can("export"),
+                       on_click=_audit, args=("export", f"incident_brief_{pb_uid}.md"))
+    st.markdown("**SLA board for the whole queue**")
+    st.dataframe(playbook.sla_table(pb_alerts, pb_cases).rename(columns={
+        "user_id": "Entity", "risk_level": "Severity", "sla_hours": "SLA (h)", "state": "State", "started": "Started",
+        "due": "Due", "hours_left": "Hours left"}), hide_index=True, width="stretch", height=260)
+    st.caption("High = 4 h, Medium = 24 h, Low = 72 h. Untriaged alerts have no clock yet; Met / Breached is judged when the case is closed.")
+
+
+# ------------------------------------------------------------------ risk intelligence
+with tab_intel:
+    st.subheader("Risk intelligence")
+    st.caption("Three views that make the scores easier to trust: do the models agree, which departments carry the risk, "
+               "and has the population's behaviour shifted. None of them uses the ground-truth labels.")
+    ri_risks = _all_model_risks(models, X, tuple(du.MODEL_CHOICES))
+    ri_cons = risk_intel.consensus_risk(ri_risks, list(user_ids))
+    st.markdown("**1. Consensus risk across all models**")
+    r1, r2, r3 = st.columns(3)
+    r1.metric("Models compared", len(du.MODEL_CHOICES))
+    r2.metric("High-confidence alerts", int((ri_cons.confidence == "High").sum()),
+              help="Users that at least 75% of the models place above the alert threshold.")
+    r3.metric("Single-model alerts", int((ri_cons.confidence == "Low").sum()),
+              help="Users only a minority of the models flag; check them before they use analyst time.")
+    st.altair_chart(charts.consensus_chart(ri_cons), width="stretch")
+    st.dataframe(ri_cons[["user_id", "consensus", "spread", "models_alerting", "models_total", "confidence"]].head(15)
+                 .rename(columns={"user_id": "Entity", "consensus": "Consensus risk", "spread": "Spread (sd)",
+                                  "models_alerting": "Models alerting", "models_total": "Models", "confidence": "Confidence"}),
+                 hide_index=True, width="stretch")
+
+    st.markdown("**2. Risk by department**")
+    ri_dept = risk_intel.department_risk(data["users"], list(user_ids), ri_cons.set_index("user_id").loc[list(user_ids), "consensus"].values)
+    st.altair_chart(charts.department_chart(ri_dept), width="stretch")
+    st.dataframe(ri_dept, hide_index=True, width="stretch")
+
+    st.markdown("**3. Behaviour drift (Population Stability Index)**")
+    mode = st.radio("Compare the baseline population with", ["One department", "An uploaded feature table"],
+                    horizontal=True, key="drift_mode")
+    drift_new = None
+    if mode == "One department":
+        dept = st.selectbox("Department", sorted(data["users"].department.unique()), key="drift_dept")
+        ids = set(data["users"][data["users"].department == dept].user_id)
+        feats = data["features"]
+        drift_new, drift_base = feats[feats.user_id.isin(ids)], feats[~feats.user_id.isin(ids)]
+        st.caption(f"{len(drift_new)} users in {dept} against {len(drift_base)} others. Small groups make PSI noisy; "
+                   "read it as a hint that a department behaves differently, not as a verdict.")
+    else:
+        up_f = st.file_uploader("Feature table (CSV with user_id and the 28 feature columns)", type="csv", key="drift_upload")
+        drift_base = data["features"]
+        if up_f is not None:
+            try:
+                up_df = pd.read_csv(up_f)
+                missing = [c for c in feature_cols if c not in up_df.columns]
+                if "user_id" not in up_df.columns or missing:
+                    st.error("The file needs a user_id column and all feature columns. Missing: " + ", ".join(missing[:6] + (["..."] if len(missing) > 6 else [])))
+                elif len(up_df) < 20:
+                    st.error("At least 20 users are needed for a stable comparison.")
+                else:
+                    drift_new = up_df
+            except Exception as exc:  # unreadable CSV
+                st.error(f"Could not read the file: {exc}")
+    if drift_new is not None and len(drift_new):
+        dr = risk_intel.feature_drift(drift_base, drift_new, feature_cols)
+        d1, d2 = st.columns(2)
+        d1.metric("Significant shifts", int((dr.status == "Significant").sum()))
+        d2.metric("Moderate shifts", int((dr.status == "Moderate").sum()))
+        st.altair_chart(charts.psi_chart(dr), width="stretch")
+        st.dataframe(dr, hide_index=True, width="stretch", height=240)
+        st.caption("PSI below 0.10 = stable, 0.10 to 0.25 = moderate shift, above 0.25 = significant shift (dashed lines).")

@@ -114,7 +114,7 @@ def test_login_wall_blocks_until_signed_in(monkeypatch, tmp_path):
     at = _login(at, "analyst", "wrong")
     assert len(at.tabs) == 0 and any("Wrong username" in e.value for e in at.error)
     at = _login(at, "analyst", "analyst123")
-    assert not at.exception and len(at.tabs) == 9
+    assert not at.exception and len(at.tabs) == 12
     assert any(a == "login" for a in cs.audit_frame(path=str(tmp_path / "app.db")).action)
 
 

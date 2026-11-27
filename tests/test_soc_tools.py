@@ -88,7 +88,7 @@ def test_app_case_save_and_investigate_and_simulator():
     [b for b in at.button if b.key == f"inv_save_{uid}"][0].click().run()
     assert not at.exception, [e.value for e in at.exception]
     assert at.session_state["cases"][uid]["status"] == "Investigating"
-    assert [m.value for m in at.metric if m.label == "Open cases"] == ["1"], [(m.label, m.value) for m in at.metric][:8]
+    assert [m.value for m in at.metric if m.label == "Open cases"] == ["1", "1"], [(m.label, m.value) for m in at.metric][:8]
     # threshold simulator responds to the slider
     at.slider(key="sim_thr").set_value(20).run()
     lo = int([m for m in at.metric if m.label == "Users alerted"][0].value)

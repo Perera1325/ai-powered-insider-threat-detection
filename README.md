@@ -56,6 +56,9 @@ The sidebar sets the **detection model** and how many alerts to show. Every tab 
 | **Upload & analyse** | Bring your own data: upload logon / device / http / email / file logs (and optionally users) or a ready-made feature table, then score it with the selected model. |
 | **MITRE ATT&CK** | Maps each alert's strongest behavioural deviations to ATT&CK techniques (heuristic investigation hints): coverage per technique, one user's evidence, and a validation check against the synthetic answer key. |
 | **Notifications & audit** | Feed of real-time alerts and escalated cases (optionally also pushed to a Slack-style webhook). Administrators also see the audit log: sign-ins, case changes, exports and stream control. |
+| **Executive overview** | One page for a manager: high-severity and untriaged alerts, open cases, SLA health, mean time to resolve, risk by department, case funnel, top entities and a downloadable Markdown summary. |
+| **Response playbooks** | Pick an alert and get a response checklist built from its severity and suggested ATT&CK techniques, an SLA clock that starts when a case is opened, an SLA board for the queue and a downloadable incident brief. |
+| **Risk intelligence** | Consensus risk across all models with a confidence level, risk roll-up by department, and behaviour drift (Population Stability Index) for a department or an uploaded feature table. |
 
 ### Sign-in and roles
 
@@ -134,6 +137,7 @@ Details, the low-and-slow stress test and caveats: [docs/robust_evaluation.md](d
 - **Saved cases** live in a local SQLite file (`data/runtime/itd.db`). On Streamlit Community Cloud the disk is reset when the app is rebuilt, so export the case log CSV for a durable copy.
 - **Login** is a demo-grade gate (hashed passwords, roles, session lockout); it is not a replacement for single sign-on.
 - **ATT&CK mapping** is heuristic (feature to technique) and only suggests where to look.
+- **Playbooks and SLAs are guidance.** The response checklists and the 4 / 24 / 72 hour SLA windows are sensible defaults for a demo, not a policy; the console never acts on an account by itself. Drift (PSI) for a department of about 10 users is noisy by nature.
 
 - **Synthetic data.** Results show the method works on this generator; they are not a claim about real organisations.
 - **Ground truth is used only for evaluation.** The *Threshold simulator* and the "ground truth" columns use the dataset's answer key. A production system would not have them, so treat the simulator as a tuning aid for the demo data.
@@ -166,7 +170,7 @@ python3 src/robust_evaluation.py        # multi-seed evaluation (about 3 minutes
 python -m pytest -q tests
 ```
 
-70 tests cover data generation, features, models, explainers, the graph, the real-time pipeline (a real producer
+The test suite covers data generation, features, models, explainers, the graph, the real-time pipeline (a real producer
 subprocess), the analyst-workflow helpers, and the real Streamlit app driven headlessly with Streamlit's `AppTest`.
 GitHub Actions runs the suite on every push ([.github/workflows/tests.yml](.github/workflows/tests.yml)).
 Test report: [docs/final_test_report.md](docs/final_test_report.md).
@@ -192,7 +196,7 @@ settings*; the dependencies come from `requirements.txt`.
 ## Repository layout
 
 ```
-app.py                       Streamlit dashboard (9 tabs)
+app.py                       Streamlit dashboard (12 tabs)
 requirements.txt             runtime dependencies (used by the hosted app)
 requirements-dev.txt         + TensorFlow (Keras autoencoder) and pytest
 src/
@@ -212,11 +216,14 @@ src/
   case_store.py              SQLite store for cases, audit log and notifications
   auth.py                    PBKDF2 password hashing, roles and permissions
   notify.py                  alert notifications (feed + optional https webhook)
+  playbook.py                response playbooks, case SLAs, incident brief
+  risk_intel.py              multi-model consensus, department roll-up, drift (PSI)
+  executive.py               case funnel, time to resolve, executive summary
   network_view.py            deterministic network graph and statistics
   upload_analysis.py         schema checks and features for user-uploaded data
   charts.py, ui_theme.py     blue/white chart and page styling
   live_demo.py               scripted attack-simulation feed
-tests/                       pytest suite (70 tests)
+tests/                       pytest suite
 data/processed/full/         generated dataset (committed); data/raw/ for optional external data
 docs/                        daily write-ups, evaluation, deployment, figures
 notebooks/                   optional Colab notebook for the real-library training
@@ -238,3 +245,4 @@ under `data/raw/` (git-ignored) and load it with `src/load_cert.py`.
 All data is synthetically generated or taken from public research datasets such as CERT. No real personal or
 organisational data is processed. The system is built for academic and defensive cybersecurity research and is not
 intended for deployment in a live environment.
+- **Playbooks and SLAs are guidance.** The response checklist and the 4 / 24 / 72 hour SLA windows are sensible defaults for a demo, not a policy; the console never acts on an account. Drift (PSI) on a department of about 10 users is noisy by nature.
