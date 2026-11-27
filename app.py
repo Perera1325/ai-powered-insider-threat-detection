@@ -1037,6 +1037,7 @@ with tab_intel:
         d1, d2 = st.columns(2)
         d1.metric("Significant shifts", int((dr.status == "Significant").sum()))
         d2.metric("Moderate shifts", int((dr.status == "Moderate").sum()))
+        st.caption(f"{int((dr.status == 'Within noise').sum())} features moved no more than chance explains for a sample of {len(drift_new)} rows.")
         st.altair_chart(charts.psi_chart(dr), width="stretch")
         st.dataframe(dr, hide_index=True, width="stretch", height=240)
-        st.caption("PSI below 0.10 = stable, 0.10 to 0.25 = moderate shift, above 0.25 = significant shift (dashed lines).")
+        st.caption("PSI below 0.10 = stable, 0.10 to 0.25 = moderate, above 0.25 = significant (dashed lines). Within noise = at or below the 95th percentile of PSI from random baseline samples of the same size.")

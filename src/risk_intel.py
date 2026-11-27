@@ -54,13 +54,32 @@ def drift_status(value):
     return "Stable" if value < 0.10 else ("Moderate" if value < 0.25 else "Significant")
 
 
+def noise_floor(baseline_col, n_new, bins, draws=60, seed=0):
+    """95th percentile of PSI between random baseline subsamples of size n_new and the rest of the baseline.
+    A shift below this is what chance alone produces for a sample this small."""
+    b = np.asarray(baseline_col, float)
+    if n_new >= len(b) // 2 or n_new < 3:
+        return 0.0
+    rng = np.random.default_rng(seed)
+    vals = []
+    for _ in range(draws):
+        idx = rng.permutation(len(b))
+        vals.append(psi(b[idx[n_new:]], b[idx[:n_new]], bins))
+    return float(np.quantile(vals, 0.95))
+
+
 def feature_drift(baseline, new, feature_cols, bins=10):
-    """PSI per feature, largest shift first. baseline/new are feature frames sharing feature_cols."""
+    """PSI per feature, largest shift first. Bins adapt to the new sample size (about 5 rows per bin) and a
+    permutation noise floor marks shifts that small samples produce by chance as 'Within noise'."""
     rows = []
+    n_new = len(new)
+    nb = int(max(3, min(bins, n_new // 5))) if n_new else bins
     for c in feature_cols:
-        if c in baseline.columns and c in new.columns and len(new) and len(baseline):
-            v = psi(baseline[c].values, new[c].values, bins)
-            rows.append({"feature": c, "psi": round(v, 3), "status": drift_status(v),
+        if c in baseline.columns and c in new.columns and n_new and len(baseline):
+            v = psi(baseline[c].values, new[c].values, nb)
+            floor = noise_floor(baseline[c].values, n_new, nb)
+            status = "Within noise" if v <= floor else drift_status(v)
+            rows.append({"feature": c, "psi": round(v, 3), "noise_floor": round(floor, 3), "status": status,
                          "baseline_mean": round(float(baseline[c].mean()), 2), "new_mean": round(float(new[c].mean()), 2)})
-    return pd.DataFrame(rows, columns=["feature", "psi", "status", "baseline_mean", "new_mean"]) \
+    return pd.DataFrame(rows, columns=["feature", "psi", "noise_floor", "status", "baseline_mean", "new_mean"]) \
         .sort_values("psi", ascending=False).reset_index(drop=True)

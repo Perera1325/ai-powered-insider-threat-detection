@@ -177,3 +177,12 @@ def test_playbook_start_case_button_starts_sla_clock(app):
 
 def test_drift_department_view(app):
     assert any(m.label == "Significant shifts" for m in app.metric)
+
+
+def test_small_sample_drift_is_within_noise_and_real_shift_survives():
+    rng = np.random.default_rng(2)
+    base = pd.DataFrame({"x": rng.normal(0, 1, 400), "y": rng.normal(0, 1, 400)})
+    new = pd.DataFrame({"x": rng.normal(0, 1, 15), "y": rng.normal(4, 1, 15)})
+    d = risk_intel.feature_drift(base, new, ["x", "y"]).set_index("feature")
+    assert d.loc["x", "status"] == "Within noise"
+    assert d.loc["y", "status"] == "Significant"

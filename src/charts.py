@@ -204,8 +204,8 @@ def psi_chart(drift, n=12):
     bars = (alt.Chart(t).mark_bar(size=14)
             .encode(y=alt.Y("feature:N", sort=t.feature.tolist(), title=None, axis=alt.Axis(labelOverlap=False)),
                     x=alt.X("psi:Q", title="Population Stability Index"),
-                    color=alt.Color("status:N", scale=alt.Scale(domain=["Stable", "Moderate", "Significant"],
-                                                                range=["#93C5FD", "#F59E0B", "#DC2626"]),
+                    color=alt.Color("status:N", scale=alt.Scale(domain=["Within noise", "Stable", "Moderate", "Significant"],
+                                                                range=["#CBD5E1", "#93C5FD", "#F59E0B", "#DC2626"]),
                                     legend=alt.Legend(title=None)),
                     tooltip=["feature", "psi", "status", "baseline_mean", "new_mean"]))
     rules = alt.Chart(pd.DataFrame({"x": [0.10, 0.25]})).mark_rule(color="#64748B", strokeDash=[4, 4]).encode(x="x:Q")
